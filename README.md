@@ -36,3 +36,17 @@ var Wallet = RaiWallet.Wallet;
 import { Wallet } from 'rai-wallet';
 const wallet = new Wallet('password');
 ```
+
+## Development
+
+In this directory:
+
+```
+yarn link
+```
+
+In the directory you are working with `rai-wallet`:
+
+```
+yarn link rai-wallet
+```

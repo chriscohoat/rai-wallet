@@ -4,6 +4,8 @@ var assert = require('assert');
 var Block = require('./Block');
 var Buffer = require('buffer').Buffer;
 var blake = require('blakejs');
+var bigInt = require('big-integer');
+var Logger = require('./Logger');
 
 var MAIN_NET_WORK_THRESHOLD = "ffffffc000000000";
 var SUPPORTED_ENCRYPTION_VERSION = 3;

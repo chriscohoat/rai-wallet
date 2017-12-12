@@ -1,6 +1,6 @@
 {
   "name": "rai-wallet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Creates ciphered RaiBlocks wallets for client-side and offline use",
   "keywords": [
     "RaiBlocks",
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "assert": "^1.4.1",
+    "big-integer": "^1.6.26",
     "blakejs": "^1.1.0",
     "buffer": "^5.0.8"
   }
