@@ -1,5 +1,7 @@
 // general functions
 
+var blake = require('blakejs');
+
 function stringFromHex(hex) {
   var hex = hex.toString();//force conversion
   var str = '';
@@ -8,7 +10,7 @@ function stringFromHex(hex) {
   return str;
 }
 
-function stringToHex(str) {
+export const stringToHex = function (str) {
   var hex = '';
   for (var i = 0; i < str.length; i++) {
     hex += '' + str.charCodeAt(i).toString(16);
@@ -16,14 +18,13 @@ function stringToHex(str) {
   return hex;
 }
 
-function accountFromHexKey(hex) {
+export const accountFromHexKey = function (hex) {
   var checksum = '';
   var key_bytes = uint4_uint8(hex_uint4(hex));
-  var checksum = uint5_string(uint4_uint5(uint8_uint4(blake2b(key_bytes, null, 5).reverse())));
+  var checksum = uint5_string(uint4_uint5(uint8_uint4(blake.blake2b(key_bytes, null, 5).reverse())));
   var c_account = uint5_string(uint4_uint5(hex_uint4('0' + hex)));
   return 'xrb_' + c_account + checksum;
-
-}
+};
 
 function parseXRBAccount(str) {
   var i = str.indexOf('xrb_');
@@ -251,7 +252,7 @@ function keyFromAccount(account) {
       var key_uint4 = array_crop(uint5_uint4(string_uint5(account_crop.substring(0, 52))));
       var hash_uint4 = uint5_uint4(string_uint5(account_crop.substring(52, 60)));
       var key_array = uint4_uint8(key_uint4);
-      var blake_hash = blake2b(key_array, null, 5).reverse();
+      var blake_hash = blake.blake2b(key_array, null, 5).reverse();
       if (equal_arrays(hash_uint4, uint8_uint4(blake_hash))) {
         var key = uint4_hex(key_uint4);
         return key;
