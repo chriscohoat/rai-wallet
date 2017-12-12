@@ -23,6 +23,15 @@ npm install --save rai-wallet
 
 ## Usage
 
+### ES5
+
+```
+var RaiWallet = require('rai-wallet');
+var Wallet = RaiWallet.Wallet;
+```
+
+### ES6
+
 ```
 import { Wallet } from 'rai-wallet';
 const wallet = new Wallet('password');
