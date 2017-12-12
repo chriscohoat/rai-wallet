@@ -27,6 +27,6 @@
     "big-integer": "^1.6.26",
     "blakejs": "^1.1.0",
     "buffer": "^5.0.8",
-    "tweetnacl": "git+https://git@github.com/jaimehgb/tweetnacl-js.git"
+    "tweetnacl": "git+https://git@github.com/chriscohoat/tweetnacl-js.git#fix-blake-dependency"
   }
 }
