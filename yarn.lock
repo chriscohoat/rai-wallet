@@ -1517,9 +1517,9 @@ tweetnacl@^0.14.3, tweetnacl@~0.14.0:
   version "0.14.5"
   resolved "https://registry.yarnpkg.com/tweetnacl/-/tweetnacl-0.14.5.tgz#5ae68177f192d4456269d108afa93ff8743f4f64"
 
-"tweetnacl@git+https://git@github.com/chriscohoat/tweetnacl-js.git#fix-blake-dependency":
+"tweetnacl@git+https://git@github.com/jaimehgb/tweetnacl-js.git#ef9ea5fd95c3ca98128877c58e40ef1a711421ef":
   version "1.0.0"
-  resolved "git+https://git@github.com/chriscohoat/tweetnacl-js.git#7c0b729e7deff6f539957f9ad2712622c572dfc1"
+  resolved "git+https://git@github.com/jaimehgb/tweetnacl-js.git#ef9ea5fd95c3ca98128877c58e40ef1a711421ef"
   dependencies:
     blakejs "^1.1.0"
 

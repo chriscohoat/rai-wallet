@@ -1,6 +1,6 @@
 {
   "name": "rai-wallet",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Creates ciphered RaiBlocks wallets for client-side and offline use",
   "keywords": [
     "RaiBlocks",
@@ -27,6 +27,6 @@
     "big-integer": "^1.6.26",
     "blakejs": "^1.1.0",
     "buffer": "^5.0.8",
-    "tweetnacl": "git+https://git@github.com/chriscohoat/tweetnacl-js.git#fix-blake-dependency"
+    "tweetnacl": "git+https://git@github.com/jaimehgb/tweetnacl-js.git#ef9ea5fd95c3ca98128877c58e40ef1a711421ef"
   }
 }
