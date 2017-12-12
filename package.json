@@ -1,6 +1,6 @@
 {
   "name": "rai-wallet",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Creates ciphered RaiBlocks wallets for client-side and offline use",
   "keywords": [
     "RaiBlocks",

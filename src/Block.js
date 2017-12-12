@@ -5,6 +5,8 @@ var VERSION_USING = "01";    // 0x01
 var EXTENSIONS = "0002";     // 0x00 0x02
 var RAI_TO_RAW = "000000000000000000000000";
 var MAIN_NET_WORK_THRESHOLD = "ffffffc000000000";
+var blake = require('blakejs');
+import { hex_uint8, dec2hex, uint8_hex, accountFromHexKey } from './functions';
 
 var blockID = { invalid: 0, not_a_block: 1, send: 2, receive: 3, open: 4, change: 5 }
 
@@ -50,11 +52,11 @@ module.exports = function () {
         data += destination
         data += balance;
 
-        var context = blake2bInit(32, null);
-        blake2bUpdate(context, hex_uint8(previous));
-        blake2bUpdate(context, hex_uint8(destination));
-        blake2bUpdate(context, hex_uint8(balance));
-        hash = uint8_hex(blake2bFinal(context));
+        var context = blake.blake2bInit(32, null);
+        blake.blake2bUpdate(context, hex_uint8(previous));
+        blake.blake2bUpdate(context, hex_uint8(destination));
+        blake.blake2bUpdate(context, hex_uint8(balance));
+        hash = uint8_hex(blake.blake2bFinal(context));
         break;
 
       case 'receive':
@@ -63,10 +65,10 @@ module.exports = function () {
         data += previous;
         data += source;
 
-        var context = blake2bInit(32, null);
-        blake2bUpdate(context, hex_uint8(previous));
-        blake2bUpdate(context, hex_uint8(source));
-        hash = uint8_hex(blake2bFinal(context));
+        var context = blake.blake2bInit(32, null);
+        blake.blake2bUpdate(context, hex_uint8(previous));
+        blake.blake2bUpdate(context, hex_uint8(source));
+        hash = uint8_hex(blake.blake2bFinal(context));
         break;
 
       case 'open':
@@ -76,11 +78,11 @@ module.exports = function () {
         data += representative;
         data += account;
 
-        var context = blake2bInit(32, null);
-        blake2bUpdate(context, hex_uint8(source));
-        blake2bUpdate(context, hex_uint8(representative));
-        blake2bUpdate(context, hex_uint8(account));
-        hash = uint8_hex(blake2bFinal(context));
+        var context = blake.blake2bInit(32, null);
+        blake.blake2bUpdate(context, hex_uint8(source));
+        blake.blake2bUpdate(context, hex_uint8(representative));
+        blake.blake2bUpdate(context, hex_uint8(account));
+        hash = uint8_hex(blake.blake2bFinal(context));
         break;
 
       case 'change':
@@ -89,10 +91,10 @@ module.exports = function () {
         data += previous;
         data += representative;
 
-        var context = blake2bInit(32, null);
-        blake2bUpdate(context, hex_uint8(previous));
-        blake2bUpdate(context, hex_uint8(representative));
-        hash = uint8_hex(blake2bFinal(context));
+        var context = blake.blake2bInit(32, null);
+        blake.blake2bUpdate(context, hex_uint8(previous));
+        blake.blake2bUpdate(context, hex_uint8(representative));
+        hash = uint8_hex(blake.blake2bFinal(context));
         break;
 
       default:
@@ -533,10 +535,10 @@ module.exports = function () {
     }
 
     var t = hex_uint8(MAIN_NET_WORK_THRESHOLD);
-    var context = blake2bInit(8, null);
-    blake2bUpdate(context, hex_uint8(work).reverse());
-    blake2bUpdate(context, hex_uint8(blockHash));
-    var threshold = blake2bFinal(context).reverse();
+    var context = blake.blake2bInit(8, null);
+    blake.blake2bUpdate(context, hex_uint8(work).reverse());
+    blake.blake2bUpdate(context, hex_uint8(blockHash));
+    var threshold = blake.blake2bFinal(context).reverse();
 
     if (threshold[0] == t[0])
       if (threshold[1] == t[1])
