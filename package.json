@@ -14,8 +14,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "babel src --presets babel-preset-es2015 --out-dir dist",
-    "prepare": "yarn build",
-    "publish": "npm publish ./"
+    "prepare": "yarn build"
   },
   "author": "Chris Cohoat <chris@cohoat.com> (https://cohoat.com)",
   "license": "BSD-2-Clause",
