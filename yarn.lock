@@ -1517,6 +1517,10 @@ tweetnacl@^0.14.3, tweetnacl@~0.14.0:
   version "0.14.5"
   resolved "https://registry.yarnpkg.com/tweetnacl/-/tweetnacl-0.14.5.tgz#5ae68177f192d4456269d108afa93ff8743f4f64"
 
+"tweetnacl@git+https://git@github.com/jaimehgb/tweetnacl-js.git":
+  version "1.0.0"
+  resolved "git+https://git@github.com/jaimehgb/tweetnacl-js.git#5dd93600fb0e39f92d4031a5d31cba0ef5f62cf2"
+
 uid-number@^0.0.6:
   version "0.0.6"
   resolved "https://registry.yarnpkg.com/uid-number/-/uid-number-0.0.6.tgz#0ea10e8035e8eb5b8e4449f06da1c730663baa81"

@@ -6,6 +6,8 @@ var Buffer = require('buffer').Buffer;
 var blake = require('blakejs');
 var bigInt = require('big-integer');
 var Logger = require('./Logger');
+var nacl = require('tweetnacl/nacl'); //We are using a forked version of tweetnacl, so need to import nacl
+import { hex_uint8, dec2hex, uint8_hex } from './functions';
 
 var MAIN_NET_WORK_THRESHOLD = "ffffffc000000000";
 var SUPPORTED_ENCRYPTION_VERSION = 3;
