@@ -2,7 +2,7 @@
 
 var blake = require('blakejs');
 
-function stringFromHex(hex) {
+export const stringFromHex = function(hex) {
   var hex = hex.toString();//force conversion
   var str = '';
   for (var i = 0; i < hex.length; i += 2)
@@ -69,7 +69,7 @@ export const dec2hex = function (str, bytes = null) {
   return hex;
 }
 
-function hex2dec(s) {
+export const hex2dec = function(s) {
 
   function add(x, y) {
     var c = 0, r = [];
