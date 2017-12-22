@@ -244,7 +244,7 @@ function array_crop(array) {
   return cropped_array;
 }
 
-function keyFromAccount(account) {
+export const keyFromAccount = function(account) {
   if ((account.startsWith('xrb_1') || account.startsWith('xrb_3')) && (account.length == 64)) {
     var account_crop = account.substring(4, 64);
     var isValid = /^[13456789abcdefghijkmnopqrstuwxyz]+$/.test(account_crop);
