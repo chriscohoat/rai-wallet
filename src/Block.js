@@ -6,7 +6,7 @@ var EXTENSIONS = "0002";     // 0x00 0x02
 var RAI_TO_RAW = "000000000000000000000000";
 var MAIN_NET_WORK_THRESHOLD = "ffffffc000000000";
 var blake = require('blakejs');
-import { hex_uint8, dec2hex, uint8_hex, accountFromHexKey } from './functions';
+import { hex_uint8, dec2hex, uint8_hex, accountFromHexKey, keyFromAccount } from './functions';
 
 var blockID = { invalid: 0, not_a_block: 1, send: 2, receive: 3, open: 4, change: 5 }
 
