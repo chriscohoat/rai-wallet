@@ -1,6 +1,6 @@
 {
   "name": "rai-wallet",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Creates ciphered RaiBlocks wallets for client-side and offline use",
   "keywords": [
     "RaiBlocks",
@@ -20,6 +20,7 @@
   "license": "BSD-2-Clause",
   "devDependencies": {
     "babel-cli": "^6.26.0",
+    "babel-plugin-add-module-exports": "^0.2.1",
     "babel-preset-es2015": "^6.24.1"
   },
   "dependencies": {
