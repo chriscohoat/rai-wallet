@@ -165,7 +165,10 @@ module.exports = function (password) {
   var iterations = 5000;              // pbkdf2 iterations
   var checksum;                       // wallet checksum
   var ciphered = true;
-
+  var loginKey = false;				        // key to tell the server when the wallet was successfully decrypted
+  var version = 1;                    // wallet version
+  var lightWallet = false;            // if true, partial chains can be stored, balances should be set from outside
+  
   var logger = new Logger();
 
   api.debug = function () {
@@ -351,7 +354,8 @@ module.exports = function (password) {
         account: keys[i].account,
         balance: bigInt(keys[i].balance),
         pendingBalance: bigInt(keys[i].pendingBalance),
-        label: keys[i].label
+        label: keys[i].label,
+        lastHash: keys[i].chain.length > 0 ? keys[i].chain[keys[i].chain.length - 1] : false
       });
     }
     return accounts;
@@ -522,6 +526,8 @@ module.exports = function (password) {
    * @param {number} newBalance - The new balance in rai units
    */
   _private.setBalance = function (newBalance) {
+    if(!lightWallet)
+      throw "Not allowed";
     balance = bigInt(newBalance);
     keys[current].balance = balance;
   }
@@ -618,6 +624,13 @@ module.exports = function (password) {
     api.useAccount(acc);
     _private.setBalance(newBalance);
     api.useAccount(keys[temp].account);
+  }
+  
+  api.setAccountBalancePublic = function(newBalance, acc)
+  {
+    if(!lightWallet)
+      throw 'Not allowed';
+    _private.setAccountBalance(newBalance, acc);
   }
 
   _private.sumAccountPending = function (acc, amount) {
@@ -1015,53 +1028,64 @@ module.exports = function (password) {
    * @throws An exception if the previous block does not match the last chain block
    * @throws An exception if the chain is empty and the block is not of type open
    */
-  api.confirmBlock = function (blockHash) {
+  api.confirmBlock = function (blockHash, broadcast = true) 
+  {
     var blk = api.getPendingBlockByHash(blockHash);
     if (blk) {
       if (blk.ready()) {
         api.useAccount(blk.getAccount());
-        if (chain.length == 0) {
+        if (chain.length == 0)
+        {
           // open block
-          if (blk.getType() != 'open')
+          if (blk.getType() != 'open' && !lightWallet)
             throw "First block needs to be 'open'.";
           chain.push(blk);
-          readyBlocks.push(blk);
+          if(broadcast)
+            readyBlocks.push(blk);
           api.removePendingBlock(blockHash);
           _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
           _private.setBalance(api.getBalance().add(blk.getAmount()));
           _private.save();
         }
-        else {
+        else 
+        {
           if (blk.getPrevious() == chain[chain.length - 1].getHash(true)) {
-            if (blk.getType() == 'receive') {
+            if (blk.getType() == 'receive')
+            {
               _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
               _private.setBalance(api.getBalance().add(blk.getAmount()));
             }
-            else if (blk.getType() == 'send') {
+            else if (blk.getType() == 'send') 
+            {
               // check if amount sent matches amount actually being sent
               var real = api.getBalanceUpToBlock(blk.getPrevious());
-              if (blk.isImmutable()) {
+              if (blk.isImmutable()) 
+              {
                 blk.setAmount(real.minus(blk.getBalance('dec')));
               }
-              else if (real.minus(blk.getBalance('dec')).neq(blk.getAmount())) {
+              else if (real.minus(blk.getBalance('dec')).neq(blk.getAmount())) 
+              {
                 logger.error('Sending incorrect amount (' + blk.getAmount().toString() + ') (' + (real.minus(blk.getBalance('dec')).toString() ) + ')');
                 api.recalculateWalletBalances();
                 throw "Incorrect send amount.";
               }
             }
-            else if (blk.getType() == 'change') {
+            else if (blk.getType() == 'change')
+            {
               // TODO
               _private.setRepresentative(blk.getRepresentative());
             }
             else
               throw "Invalid block type";
             chain.push(blk);
-            readyBlocks.push(blk);
+            if(broadcast)
+              readyBlocks.push(blk);
             api.removePendingBlock(blockHash);
             api.recalculateWalletBalances();
             _private.save();
           }
-          else {
+          else 
+          {
             console.log(blk.getPrevious() + " " + chain[chain.length - 1].getHash(true));
             logger.warn("Previous block does not match actual previous block");
             throw "Previous block does not match actual previous block";
@@ -1069,7 +1093,8 @@ module.exports = function (password) {
         }
         logger.log("Block added to chain: " + blk.getHash(true));
       }
-      else {
+      else
+      {
         logger.error("Trying to confirm block without signature or work.");
         throw "Block lacks signature or work.";
       }
@@ -1080,7 +1105,7 @@ module.exports = function (password) {
     }
   }
 
-  api.importBlock = function (blk, acc) {
+  api.importBlock = function (blk, acc, broadcast = true) {
     api.useAccount(acc);
     blk.setAccount(acc);
     if (!blk.ready())
@@ -1100,7 +1125,7 @@ module.exports = function (password) {
     pendingBlocks.push(blk);
     walletPendingBlocks.push(blk);
     _private.save();
-    api.confirmBlock(blk.getHash(true));
+    api.confirmBlock(blk.getHash(true), broadcast);
   }
 
   api.importForkedBlock = function (blk, acc) {
@@ -1135,6 +1160,26 @@ module.exports = function (password) {
       }
     }
   }
+  
+  api.getLoginKey = function()
+	{
+		return loginKey;
+	}
+	
+	api.setLoginKey = function(lk = false)
+	{
+		if(loginKey === false)
+		  if(lk)
+			  loginKey = lk;
+			else
+			  loginKey = uint8_hex(nacl.randomBytes(32));
+		// cannot be changed
+	}
+	
+	api.lightWallet = function(light)
+	{
+	  lightWallet = light;
+	}
 
   _private.save = function () {
     // save current account status
@@ -1153,36 +1198,17 @@ module.exports = function (password) {
    */
   api.pack = function () {
     var pack = {};
-    var tempKeys = [];
+    var labels = [];
     for (var i in keys) {
-      var aux = {};
-      aux.priv = uint8_hex(keys[i].priv);
-      aux.pub = uint8_hex(keys[i].pub);
-      aux.account = keys[i].account;
-      aux.balance = keys[i].balance.toString();
-      aux.pendingBalance = keys[i].pendingBalance.toString();
-      aux.lastBlock = keys[i].lastBlock;
-      aux.pendingBlocks = [];
-      aux.chain = [];
-      aux.representative = keys[i].representative;
-      aux.label = keys[i].label;
-
-      for (let j in keys[i].chain) {
-        aux.chain.push(keys[i].chain[j].getEntireJSON());
-      }
-      tempKeys.push(aux);
+      if(keys[i].label !== null)
+        labels.push({key: i, label: keys[i].label});
     }
-    pack.readyBlocks = []
 
-    for (let i in readyBlocks) {
-      pack.readyBlocks.push(readyBlocks[i].getEntireJSON());
-    }
-    pack.keys = tempKeys;
+    pack.labels = labels;
     pack.seed = uint8_hex(seed);
     pack.last = lastKeyFromSeed;
-    pack.recent = recentTxs;
-    pack.remoteWork = remoteWork;
-    pack.autoWork = autoWork;
+    pack.version = version;
+    pack.loginKey = loginKey;
     pack.minimumReceive = minimumReceive.toString();
 
     pack = JSON.stringify(pack);
@@ -1228,48 +1254,23 @@ module.exports = function (password) {
       throw "Wallet is corrupted or has been tampered.";
 
     var walletData = JSON.parse(decryptedBytes.toString('utf8'));
-
+  
     seed = hex_uint8(walletData.seed);
-    lastKeyFromSeed = walletData.last;
-    recentTxs = walletData.recent;
-    remoteWork = [];
-    autoWork = walletData.autoWork;
-    readyBlocks = [];
     minimumReceive = walletData.minimumReceive != undefined ? bigInt(walletData.minimumReceive) : bigInt("1000000000000000000000000");
-
-    for (let i in walletData.readyBlocks) {
-      var blk = new Block();
-      blk.buildFromJSON(walletData.readyBlocks[i]);
-      readyBlocks.push(blk);
-    }
-
-    for (let i in walletData.keys) {
-      var aux = {};
-
-      aux.chain = [];
-      for (let j in walletData.keys[i].chain) {
-        let blk = new Block();
-        blk.buildFromJSON(walletData.keys[i].chain[j]);
-        aux.chain.push(blk);
+    loginKey = walletData.loginKey != undefined ? walletData.loginKey : false;
+    var labels = walletData.labels != undefined ? walletData.labels : [];
+    for(let i = 0; i < walletData.last + 1; i++)
+    {
+      api.newKeyFromSeed();
+      for(let j in labels)
+      {
+        if(labels[j].key == i)
+          keys[i].label = labels[j].label;
       }
-
-      aux.priv = hex_uint8(walletData.keys[i].priv);
-      aux.pub = hex_uint8(walletData.keys[i].pub);
-      aux.account = walletData.keys[i].account;
-      aux.balance = bigInt(walletData.keys[i].balance ? walletData.keys[i].balance : 0);
-      aux.lastBlock = aux.chain.length > 0 ? aux.chain[aux.chain.length - 1].getHash(true) : "";
-      aux.lastPendingBlock = aux.lastBlock;
-      aux.pendingBalance = bigInt(walletData.keys[i].pendingBalance ? walletData.keys[i].pendingBalance : 0);
-      aux.pendingBlocks = [];
-      aux.representative = walletData.keys[i].representative != undefined ? walletData.keys[i].representative : aux.account;
-      aux.label = walletData.keys[i].label != undefined ? walletData.keys[i].label : "";
-
-      keys.push(aux);
-      if (lastPendingBlock.length == 64)
-        api.workPoolAdd(lastPendingBlock, aux.account, true);
     }
+    
     api.useAccount(keys[0].account);
-    api.recalculateWalletBalances();
+
     ciphered = false;
     return walletData;
   }
@@ -1281,6 +1282,7 @@ module.exports = function (password) {
       api.setSeed(setSeed);
     api.newKeyFromSeed();
     api.useAccount(keys[0].account);
+    loginKey = uint8_hex(nacl.randomBytes(32));
     return uint8_hex(seed);
   }
 

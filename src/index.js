@@ -1,5 +1,6 @@
 module.exports = {
   Wallet: require('./Wallet'),
-  Block: require('./Block')
+  Block: require('./Block'),
+  RaiFunctions: require('./functions')
 };
 

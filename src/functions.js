@@ -26,7 +26,7 @@ export const accountFromHexKey = function (hex) {
   return 'xrb_' + c_account + checksum;
 };
 
-function parseXRBAccount(str) {
+export const parseXRBAccount = function(str) {
   var i = str.indexOf('xrb_');
   if (i != -1) {
     var acc = str.slice(i, i + 64);
