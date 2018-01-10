@@ -526,8 +526,6 @@ module.exports = function (password) {
    * @param {number} newBalance - The new balance in rai units
    */
   _private.setBalance = function (newBalance) {
-    if(!lightWallet)
-      throw "Not allowed";
     balance = bigInt(newBalance);
     keys[current].balance = balance;
   }
