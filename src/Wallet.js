@@ -1226,6 +1226,10 @@ module.exports = function (password) {
 
 
     var payload = Buffer.concat([new Buffer(checksum), salt, encryptedBytes]);
+
+    // decrypt to check if wallet was corrupted during ecryption somehow
+    if(api.decryptAndCheck(payload).toString('hex') === false)
+      return api.pack(); // try again, shouldnt happen often
     return payload.toString('hex');
   }
 
@@ -1234,22 +1238,9 @@ module.exports = function (password) {
    *
    */
   api.load = function (data) {
-    var bytes = new Buffer(data, 'hex');
-    checksum = bytes.slice(0, 32);
-    var salt = bytes.slice(32, 48);
-    var payload = bytes.slice(48);
-    var key = pbkdf2.pbkdf2Sync(passPhrase, salt, iterations, 32, 'sha1');
-
-    var options = {};
-    options.padding = options.padding || Iso10126;
-    var decryptedBytes = AES.decrypt(payload, key, salt, options);
-
-    var context = blake.blake2bInit(32);
-    blake.blake2bUpdate(context, decryptedBytes);
-    var hash = uint8_hex(blake.blake2bFinal(context));
-
-    if (hash != checksum.toString('hex').toUpperCase())
-      throw "Wallet is corrupted or has been tampered.";
+    var decryptedBytes = api.decryptAndCheck(data);
+    if(decryptedBytes === false)
+      throw "Wallet is corruped or has been tampered.";
 
     var walletData = JSON.parse(decryptedBytes.toString('utf8'));
   
@@ -1271,6 +1262,26 @@ module.exports = function (password) {
 
     ciphered = false;
     return walletData;
+  }
+
+  api.decryptAndCheck = function(data) {
+    var bytes = new Buffer(data, 'hex');
+    checksum = bytes.slice(0, 32);
+    var salt = bytes.slice(32, 48);
+    var payload = bytes.slice(48);
+    var key = pbkdf2.pbkdf2Sync(passPhrase, salt, iterations, 32, 'sha1');
+
+    var options = {};
+    options.padding = options.padding || Iso10126;
+    var decryptedBytes = AES.decrypt(payload, key, salt, options);
+
+    var context = blake.blake2bInit(32);
+    blake.blake2bUpdate(context, decryptedBytes);
+    var hash = uint8_hex(blake.blake2bFinal(context));
+
+    if (hash != checksum.toString('hex').toUpperCase())
+      return false;
+    return decryptedBytes;
   }
 
   api.createWallet = function (setSeed = false) {
