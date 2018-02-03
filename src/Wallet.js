@@ -999,7 +999,7 @@ module.exports = function (password) {
   }
 
   api.getReadyBlockByHash = function (blockHash) {
-    for (let i in pendingBlocks) {
+    for (let i in readyBlocks) {
       if (readyBlocks[i].getHash(true) == blockHash) {
         return readyBlocks[i];
       }
