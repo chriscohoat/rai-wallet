@@ -808,14 +808,18 @@ module.exports = function (password) {
   }
 
   api.getNextWorkBlockHash = function (acc) {
-    var aux = currentIdx;
+    var prevAcc = current.account;
     api.useAccount(acc);
 
-    if (current.lastBlock.length > 0)
-      return current.lastBlock;
-    else
-      return uint8_hex(current.pub);
-    api.useAccount(keys[currentIdx].account);
+    let hash;
+    if (current.lastBlock.length > 0) {
+      hash = current.lastBlock;
+    } else {
+      hash = uint8_hex(current.pub);
+    }
+
+    api.useAccount(prevAcc);
+    return hash;
   }
 
   _private.setLastBlockHash = function (blockHash) {
