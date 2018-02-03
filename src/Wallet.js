@@ -321,6 +321,7 @@ module.exports = function (password) {
         pendingBalance: bigInt(0),
         lastBlock: "",
         lastPendingBlock: "",
+        pendingBlocks: [],
         subscribed: false,
         chain: [],
         representative: "",
