@@ -388,6 +388,7 @@ module.exports = function (password) {
         lastBlock = keys[i].lastBlock;
         lastPendingBlock = keys[i].lastPendingBlock;
         chain = keys[i].chain;
+        pendingBlocks = keys[i].pendingBlocks;
         representative = keys[i].representative;
         return;
       }
