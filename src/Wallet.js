@@ -134,38 +134,27 @@ var AES = {
 
 module.exports = function (password) {
   var api = {};                       // wallet public methods
-  var _private = {};                   // wallet private methods
+  var _private = {};                  // wallet private methods
 
   var raiwalletdotcomRepresentative = "xrb_3pczxuorp48td8645bs3m6c3xotxd3idskrenmi65rbrga5zmkemzhwkaznh"; // self explaining
 
-  var pk;                             // current account public key
-  var sk;                             // current account secret key
-  var pendingBalance;                 // current account pending balance
-  var balance;                        // current account balance
-  var lastBlock = "";                 // current account last block
-  var lastPendingBlock = "";
-  var pendingBlocks = [];             // current account pending blocks
-  var chain = [];                     // current account chain
-  var representative;					// current account representative
-  var minimumReceive = bigInt(1);		// minimum amount to pocket
+  var current;                        // current active key (shortcut for keys[currentIdx])
+  var currentIdx = -1;                // key being used
+  var minimumReceive = bigInt(1);     // minimum amount to pocket
 
   var keys = [];                      // wallet keys, accounts, and all necessary data
-  var recentTxs = [];
   var walletPendingBlocks = [];       // wallet pending blocks
   var readyBlocks = [];               // wallet blocks signed and worked, ready to broadcast and add to chain
   var errorBlocks = [];               // blocks which could not be confirmed
 
   var remoteWork = [];                // work pool
-  var autoWork = false;               // generate work automatically on receive transactions (server)
 
-  var current = -1;                   // key being used
   var seed = "";                      // wallet seed
   var lastKeyFromSeed = -1;           // seed index
   var passPhrase = password;          // wallet password
   var iterations = 5000;              // pbkdf2 iterations
-  var checksum;                       // wallet checksum
   var ciphered = true;
-  var loginKey = false;				        // key to tell the server when the wallet was successfully decrypted
+  var loginKey = false;               // key to tell the server when the wallet was successfully decrypted
   var version = 1;                    // wallet version
   var lightWallet = false;            // if true, partial chains can be stored, balances should be set from outside
   
@@ -177,28 +166,14 @@ module.exports = function (password) {
 
   api.debugChain = function () {
     api.useAccount(keys[1].account);
-    for (let i in chain) {
-      console.log(chain[i].getHash(true));
-      console.log(chain[i].getPrevious());
+    for (let i in current.chain) {
+      console.log(current.chain[i].getHash(true));
+      console.log(current.chain[i].getPrevious());
     }
   }
 
   api.setLogger = function (loggerObj) {
     logger = loggerObj;
-  }
-
-  /**
-   * Sets the secret key to do all the signing stuff
-   *
-   * @param {Array} hex - The secret key byte array
-   * @throws An exception on invalid secret key length
-   */
-  _private.setSecretKey = function (bytes) {
-    if (bytes.length != 32)
-      throw "Invalid Secret Key length. Should be 32 bytes.";
-
-    sk = bytes;
-    pk = nacl.sign.keyPair.fromSecretKey(sk).publicKey;
   }
 
   /**
@@ -208,7 +183,10 @@ module.exports = function (password) {
    * @returns {Array} The 64 byte signature
    */
   api.sign = function (message) {
-    return nacl.sign.detached(message, sk);
+    const pk = current.priv;
+    if (pk.length != 32)
+      throw "Invalid Secret Key length. Should be 32 bytes.";
+    return nacl.sign.detached(message, pk);
   }
 
   api.changePass = function (pswd, newPass) {
@@ -321,6 +299,7 @@ module.exports = function (password) {
         pendingBalance: bigInt(0),
         lastBlock: "",
         lastPendingBlock: "",
+        pendingBlocks: [],
         subscribed: false,
         chain: [],
         representative: "",
@@ -338,8 +317,8 @@ module.exports = function (password) {
    */
   api.getPublicKey = function (hex = false) {
     if (hex)
-      return uint8_hex(pk);
-    return pk;
+      return uint8_hex(current.pub);
+    return current.pub;
   }
 
   /**
@@ -368,28 +347,10 @@ module.exports = function (password) {
    * @throws An exception if the account is not found in the wallet
    */
   api.useAccount = function (accountToUse) {
-    // save current account status
-    if (current != -1) {
-      keys[current].balance = balance;
-      keys[current].pendingBalance = pendingBalance;
-      keys[current].lastBlock = lastBlock;
-      keys[current].lastPendingBlock = lastPendingBlock;
-      keys[current].chain = chain;
-      keys[current].pendingBlocks = pendingBlocks;
-      keys[current].representative = representative;
-    }
-
     for (var i in keys) {
       if (keys[i].account == accountToUse) {
-        _private.setSecretKey(keys[i].priv);
-        balance = keys[i].balance;
-        pendingBalance = keys[i].pendingBalance;
-        current = i;
-        lastBlock = keys[i].lastBlock;
-        lastPendingBlock = keys[i].lastPendingBlock;
-        chain = keys[i].chain;
-        pendingBlocks = keys[i].pendingBlocks;
-        representative = keys[i].representative;
+        currentIdx = i;
+        current = keys[i];
         return;
       }
     }
@@ -398,7 +359,7 @@ module.exports = function (password) {
 
   api.importChain = function (blocks, acc) {
     api.useAccount(acc);
-    var last = chain.length > 0 ? chain[chain.length - 1].getHash(true) : uint8_hex(pk);
+    var last = current.chain.length > 0 ? current.chain[current.chain.length - 1].getHash(true) : uint8_hex(current.pub);
     // verify chain
     for (let i in blocks) {
       if (blocks[i].getPrevious() != last)
@@ -410,38 +371,38 @@ module.exports = function (password) {
   }
 
   api.getLastNBlocks = function (acc, n, offset = 0) {
-    var temp = keys[current].account;
+    var temp = keys[currentIdx].account;
     api.useAccount(acc);
     var blocks = [];
 
-    if (n > chain.length)
-      n = chain.length;
+    if (n > current.chain.length)
+      n = current.chain.length;
 
-    for (let i = chain.length - 1 - offset; i > chain.length - 1 - n - offset; i--) {
-      blocks.push(chain[i]);
+    for (let i = current.chain.length - 1 - offset; i > current.chain.length - 1 - n - offset; i--) {
+      blocks.push(current.chain[i]);
     }
     api.useAccount(temp);
     return blocks;
   }
 
   api.getBlocksUpTo = function (acc, hash) {
-    var temp = keys[current].account;
+    var temp = keys[currentIdx].account;
     api.useAccount(acc);
 
     var blocks = [];
-    for (let i = chain.length - 1; i > 0; i--) {
-      blocks.push(chain[i]);
-      if (chain[i].getHash(true) == hash)
+    for (let i = current.chain.length - 1; i > 0; i--) {
+      blocks.push(current.chain[i]);
+      if (current.chain[i].getHash(true) == hash)
         break;
     }
     return blocks;
   }
 
   api.getAccountBlockCount = function (acc) {
-    var temp = keys[current].account;
+    var temp = keys[currentIdx].account;
     api.useAccount(acc);
 
-    var n = chain.length;
+    var n = current.chain.length;
     api.useAccount(temp);
     return n;
   }
@@ -461,7 +422,7 @@ module.exports = function (password) {
       throw "Invalid block hash length. It should be 32 bytes.";
 
     block.setSignature(uint8_hex(api.sign(blockHash)));
-    block.setAccount(keys[current].account);
+    block.setAccount(keys[currentIdx].account);
 
     logger.log("Block " + block.getHash(true) + " signed.");
   }
@@ -491,7 +452,7 @@ module.exports = function (password) {
    * @returns {number} balance
    */
   api.getBalance = function () {
-    return balance ? balance : keys[current].balance;
+    return current.balance;
   }
 
   /**
@@ -500,7 +461,8 @@ module.exports = function (password) {
    * @returns {number} pendingBalance
    */
   api.getPendingBalance = function () {
-    //return pendingBalance ? pendingBalance : keys[current].pendingBalance;
+    //return current.pendingBalance
+    const pendingBlocks = current.pendingBlocks;
     var am = bigInt(0);
     for (let i in pendingBlocks) {
       if (pendingBlocks[i].getType() == 'open' || pendingBlocks[i].getType() == 'receive')
@@ -511,14 +473,13 @@ module.exports = function (password) {
 
   api.getRepresentative = function (acc = false) {
     if (!acc)
-      return representative;
+      return current.representative;
     api.useAccount(acc);
-    return representative;
+    return current.representative;
   }
 
   _private.setRepresentative = function (repr) {
-    representative = repr;
-    keys[current].representative = repr;
+    current.representative = repr;
   }
 
   /**
@@ -527,13 +488,11 @@ module.exports = function (password) {
    * @param {number} newBalance - The new balance in rai units
    */
   _private.setBalance = function (newBalance) {
-    balance = bigInt(newBalance);
-    keys[current].balance = balance;
+    current.balance = bigInt(newBalance);
   }
 
   _private.setPendingBalance = function (newBalance) {
-    pendingBalance = bigInt(newBalance);
-    keys[current].pendingBalance = pendingBalance;
+    current.pendingBalance = bigInt(newBalance);
   }
 
   api.getAccountBalance = function (acc) {
@@ -568,7 +527,7 @@ module.exports = function (password) {
   }
 
   api.getBalanceUpToBlock = function (blockHash) {
-    if (chain.length <= 0)
+    if (current.chain.length <= 0)
       return 0;
 
     var sum = bigInt(0);
@@ -576,8 +535,8 @@ module.exports = function (password) {
     var blk;
 
     // check pending blocks first
-    for (let i = pendingBlocks.length - 1; i >= 0; i--) {
-      blk = pendingBlocks[i];
+    for (let i = current.pendingBlocks.length - 1; i >= 0; i--) {
+      blk = current.pendingBlocks[i];
 
       if (blk.getHash(true) == blockHash)
         found = true;
@@ -593,8 +552,8 @@ module.exports = function (password) {
       }
     }
 
-    for (let i = chain.length - 1; i >= 0; i--) {
-      blk = chain[i];
+    for (let i = current.chain.length - 1; i >= 0; i--) {
+      blk = current.chain[i];
 
       if (blk.getHash(true) == blockHash)
         found = true;
@@ -619,7 +578,7 @@ module.exports = function (password) {
    * @param {string} Account - The account whose balance is being updated
    */
   _private.setAccountBalance = function (newBalance, acc) {
-    var temp = current;
+    var temp = currentIdx;
     api.useAccount(acc);
     _private.setBalance(newBalance);
     api.useAccount(keys[temp].account);
@@ -633,7 +592,7 @@ module.exports = function (password) {
   }
 
   _private.sumAccountPending = function (acc, amount) {
-    var temp = current;
+    var temp = currentIdx;
     api.useAccount(acc);
     _private.setPendingBalance(api.getPendingBalance().sum(amount));
     api.useAccount(keys[temp].account);
@@ -650,15 +609,15 @@ module.exports = function (password) {
   }
 
   api.removePendingBlocks = function () {
-    pendingBlocks = [];
+    current.pendingBlocks = [];
   }
 
   api.removePendingBlock = function (blockHash) {
     var found = false;
-    for (let i in pendingBlocks) {
-      let tmp = pendingBlocks[i];
+    for (let i in current.pendingBlocks) {
+      let tmp = current.pendingBlocks[i];
       if (tmp.getHash(true) == blockHash) {
-        pendingBlocks.splice(i, 1);
+        current.pendingBlocks.splice(i, 1);
         found = true;
       }
     }
@@ -685,8 +644,8 @@ module.exports = function (password) {
 
     for (let i = 0; i < keys.length; i++) {
       api.useAccount(keys[i].account);
-      for (let j = chain.length - 1; j >= 0; j--) {
-        var blk = chain[j];
+      for (let j = current.chain.length - 1; j >= 0; j--) {
+        var blk = current.chain[j];
         if (blk.getHash(true) == blockHash)
           return blk;
       }
@@ -710,18 +669,16 @@ module.exports = function (password) {
     var remaining = bal.minus(amount);
     var blk = new Block();
 
-    blk.setSendParameters(lastPendingBlock, to, remaining);
+    blk.setSendParameters(current.lastPendingBlock, to, remaining);
     blk.build();
     api.signBlock(blk);
     blk.setAmount(amount);
     blk.setAccount(from);
 
-    lastPendingBlock = blk.getHash(true);
-    keys[current].lastPendingBlock = lastPendingBlock;
+    current.lastPendingBlock = blk.getHash(true);
     _private.setBalance(remaining);
-    pendingBlocks.push(blk);
+    current.pendingBlocks.push(blk);
     walletPendingBlocks.push(blk);
-    _private.save();
 
     // check if we have received work already
     var worked = false;
@@ -762,14 +719,14 @@ module.exports = function (password) {
         return false;
     }
 
-    for (let i in chain) {
-      if (chain[i].getSource() == sourceBlockHash)
+    for (let i in current.chain) {
+      if (current.chain[i].getSource() == sourceBlockHash)
         return false;
     }
 
     var blk = new Block();
-    if (lastPendingBlock.length == 64)
-      blk.setReceiveParameters(lastPendingBlock, sourceBlockHash);
+    if (current.lastPendingBlock.length == 64)
+      blk.setReceiveParameters(current.lastPendingBlock, sourceBlockHash);
     else
       blk.setOpenParameters(sourceBlockHash, acc, raiwalletdotcomRepresentative);
 
@@ -779,12 +736,10 @@ module.exports = function (password) {
     blk.setAccount(acc);
     blk.setOrigin(from);
 
-    lastPendingBlock = blk.getHash(true);
-    keys[current].lastPendingBlock = lastPendingBlock;
-    pendingBlocks.push(blk);
+    current.lastPendingBlock = blk.getHash(true);
+    current.pendingBlocks.push(blk);
     walletPendingBlocks.push(blk);
     _private.setPendingBalance(api.getPendingBalance().add(amount));
-    _private.save();
 
     // check if we have received work already
     var worked = false;
@@ -808,20 +763,18 @@ module.exports = function (password) {
   api.addPendingChangeBlock = function (acc, repr) {
     api.useAccount(acc);
 
-    if (!lastPendingBlock)
+    if (!current.lastPendingBlock)
       throw "There needs to be at least 1 block in the chain.";
 
     var blk = new Block();
-    blk.setChangeParameters(lastPendingBlock, repr);
+    blk.setChangeParameters(current.lastPendingBlock, repr);
     blk.build();
     api.signBlock(blk);
     blk.setAccount(acc);
 
-    lastPendingBlock = blk.getHash(true);
-    keys[current].lastPendingBlock = lastPendingBlock;
-    pendingBlocks.push(blk);
+    current.lastPendingBlock = blk.getHash(true);
+    current.pendingBlocks.push(blk);
     walletPendingBlocks.push(blk);
-    _private.save();
 
     // check if we have received work already
     var worked = false;
@@ -843,7 +796,7 @@ module.exports = function (password) {
   }
 
   api.getPendingBlocks = function () {
-    return pendingBlocks;
+    return current.pendingBlocks;
   }
 
   api.getPendingBlockByHash = function (blockHash) {
@@ -855,19 +808,18 @@ module.exports = function (password) {
   }
 
   api.getNextWorkBlockHash = function (acc) {
-    var aux = current;
+    var aux = currentIdx;
     api.useAccount(acc);
 
-    if (lastBlock.length > 0)
-      return lastBlock;
+    if (current.lastBlock.length > 0)
+      return current.lastBlock;
     else
-      return uint8_hex(pk);
-    api.useAccount(keys[current].account);
+      return uint8_hex(current.pub);
+    api.useAccount(keys[currentIdx].account);
   }
 
   _private.setLastBlockHash = function (blockHash) {
-    lastBlock = blockHash;
-    keys[current].lastBlock = blockHash;
+    current.lastBlock = blockHash;
   }
 
   api.workPoolAdd = function (hash, acc, needed = false, work = false) {
@@ -1033,22 +985,21 @@ module.exports = function (password) {
     if (blk) {
       if (blk.ready()) {
         api.useAccount(blk.getAccount());
-        if (chain.length == 0)
+        if (current.chain.length == 0)
         {
           // open block
           if (blk.getType() != 'open' && !lightWallet)
             throw "First block needs to be 'open'.";
-          chain.push(blk);
+          current.chain.push(blk);
           if(broadcast)
             readyBlocks.push(blk);
           api.removePendingBlock(blockHash);
           _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
           _private.setBalance(api.getBalance().add(blk.getAmount()));
-          _private.save();
         }
         else 
         {
-          if (blk.getPrevious() == chain[chain.length - 1].getHash(true)) {
+          if (blk.getPrevious() == current.chain[current.chain.length - 1].getHash(true)) {
             if (blk.getType() == 'receive')
             {
               _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
@@ -1076,16 +1027,15 @@ module.exports = function (password) {
             }
             else
               throw "Invalid block type";
-            chain.push(blk);
+            current.chain.push(blk);
             if(broadcast)
               readyBlocks.push(blk);
             api.removePendingBlock(blockHash);
             api.recalculateWalletBalances();
-            _private.save();
           }
           else 
           {
-            console.log(blk.getPrevious() + " " + chain[chain.length - 1].getHash(true));
+            console.log(blk.getPrevious() + " " + current.chain[current.chain.length - 1].getHash(true));
             logger.warn("Previous block does not match actual previous block");
             throw "Previous block does not match actual previous block";
           }
@@ -1110,20 +1060,18 @@ module.exports = function (password) {
     if (!blk.ready())
       throw "Block should be complete.";
 
-    lastPendingBlock = blk.getHash(true);
-    keys[current].lastPendingBlock = blk.getHash(true);
+    current.lastPendingBlock = blk.getHash(true);
 
     // check if there is a conflicting block pending
-    for (let i in pendingBlocks) {
-      if (pendingBlocks[i].getPrevious() == blk.getPrevious()) {
+    for (let i in current.pendingBlocks) {
+      if (current.pendingBlocks[i].getPrevious() == blk.getPrevious()) {
         // conflict
         _private.fixPreviousChange(blk.getPrevious(), blk.getHash(true), acc);
       }
     }
 
-    pendingBlocks.push(blk);
+    current.pendingBlocks.push(blk);
     walletPendingBlocks.push(blk);
-    _private.save();
     api.confirmBlock(blk.getHash(true), broadcast);
   }
 
@@ -1131,13 +1079,13 @@ module.exports = function (password) {
     api.useAccount(acc);
     var prev = blk.getPrevious();
 
-    for (let i = chain.length - 1; i >= 0; i--) {
-      if (chain[i].getPrevious() == prev) {
+    for (let i = current.chain.length - 1; i >= 0; i--) {
+      if (current.chain[i].getPrevious() == prev) {
         // fork found, delete block and its successors
-        chain.splice(i, chain.length);
+        current.chain.splice(i, current.chain.length);
 
         // delete pending blocks if any
-        pendingBlocks = [];
+        current.pendingBlocks = [];
 
         // import new block
         api.importBlock(blk, acc);
@@ -1149,12 +1097,12 @@ module.exports = function (password) {
 
   _private.fixPreviousChange = function (oldPrevious, newPrevious, acc) {
     api.useAccount(acc);
-    for (let i in pendingBlocks) {
-      if (pendingBlocks[i].getPrevious() == oldPrevious) {
-        var oldHash = pendingBlocks[i].getHash(true);
-        pendingBlocks[i].changePrevious(newPrevious);
-        var newHash = pendingBlocks[i].getHash(true);
-        lastPendingBlock = newHash;
+    for (let i in current.pendingBlocks) {
+      if (current.pendingBlocks[i].getPrevious() == oldPrevious) {
+        var oldHash = current.pendingBlocks[i].getHash(true);
+        current.pendingBlocks[i].changePrevious(newPrevious);
+        var newHash = current.pendingBlocks[i].getHash(true);
+        current.lastPendingBlock = newHash;
         _private.fixPreviousChange(oldHash, newHash, acc);
       }
     }
@@ -1179,16 +1127,6 @@ module.exports = function (password) {
 	{
 	  lightWallet = light;
 	}
-
-  _private.save = function () {
-    // save current account status
-    keys[current].balance = balance;
-    keys[current].pendingBalance = pendingBalance;
-    keys[current].lastBlock = lastBlock;
-    keys[current].chain = chain;
-    keys[current].pendingBlocks = pendingBlocks;
-    keys[current].representative = representative;
-  }
 
   /**
    * Encrypts an packs the wallet data in a hex string
@@ -1216,7 +1154,7 @@ module.exports = function (password) {
 
     var context = blake.blake2bInit(32);
     blake.blake2bUpdate(context, pack);
-    checksum = blake.blake2bFinal(context);
+    var checksum = blake.blake2bFinal(context);
 
     var salt = new Buffer(nacl.randomBytes(16));
     var key = pbkdf2.pbkdf2Sync(passPhrase, salt, iterations, 32, 'sha1');
@@ -1267,7 +1205,7 @@ module.exports = function (password) {
 
   api.decryptAndCheck = function(data) {
     var bytes = new Buffer(data, 'hex');
-    checksum = bytes.slice(0, 32);
+    var checksum = bytes.slice(0, 32);
     var salt = bytes.slice(32, 48);
     var payload = bytes.slice(48);
     var key = pbkdf2.pbkdf2Sync(passPhrase, salt, iterations, 32, 'sha1');
