@@ -131,6 +131,10 @@ var AES = {
   }
 };
 
+var KEY_TYPE = {
+  SEEDED: 'seeded',
+  EXPLICIT: 'explicit',
+}
 
 module.exports = function (password) {
   var api = {};                       // wallet public methods
@@ -155,7 +159,7 @@ module.exports = function (password) {
   var iterations = 5000;              // pbkdf2 iterations
   var ciphered = true;
   var loginKey = false;               // key to tell the server when the wallet was successfully decrypted
-  var version = 1;                    // wallet version
+  var version = 2;                    // wallet version
   var lightWallet = false;            // if true, partial chains can be stored, balances should be set from outside
   
   var logger = new Logger();
@@ -250,30 +254,71 @@ module.exports = function (password) {
     seed = nacl.randomBytes(32);
   }
 
+  _private.addKey = function(o) {
+    let key = {
+      account: accountFromHexKey(uint8_hex(o.pub)),
+      balance: bigInt(0),
+      pendingBalance: bigInt(0),
+      lastBlock: "",
+      lastPendingBlock: "",
+      pendingBlocks: [],
+      subscribed: false,
+      chain: [],
+      representative: "",
+      label: ""
+    }
+    for (let k in o) {
+      key[k] = o[k];
+    }
+    keys.push(key);
+    return key;
+  }
+
+  _private.newKeyDataFromSeed = function(index) {
+    if (seed.length != 32)
+      throw "Seed should be set first.";
+
+    let index_bytes = hex_uint8(dec2hex(index, 4));
+
+    let context = blake.blake2bInit(32);
+    blake.blake2bUpdate(context, seed);
+    blake.blake2bUpdate(context, index_bytes);
+
+    let secretKey = blake.blake2bFinal(context);
+    let publicKey = nacl.sign.keyPair.fromSecretKey(secretKey).publicKey;
+
+    return {
+      type: KEY_TYPE.SEEDED,
+      seedIndex: index,
+      priv: secretKey,
+      pub: publicKey,
+    };
+  }
+
+  _private.newKeyDataFromSecret = function(secretKey) {
+    let publicKey = nacl.sign.keyPair.fromSecretKey(secretKey).publicKey;
+    return {
+      type: KEY_TYPE.EXPLICIT,
+      priv: secretKey,
+      pub: publicKey,
+    };
+  }
+
   /**
    * Derives a new secret key from the seed and adds it to the wallet
    *
    * @throws An exception if theres no seed
+   * @returns {string} The freshly added account address
    */
   api.newKeyFromSeed = function () {
-    if (seed.length != 32)
-      throw "Seed should be set first.";
+    let index = lastKeyFromSeed + 1;
 
-    var index = lastKeyFromSeed + 1;
-    index = hex_uint8(dec2hex(index, 4));
+    let key = _private.newKeyDataFromSeed(index);
+    key = _private.addKey(key);
+    logger.log("New seeded key added to wallet.");
 
-    var context = blake.blake2bInit(32);
-    blake.blake2bUpdate(context, seed);
-    blake.blake2bUpdate(context, index);
-
-    var newKey = blake.blake2bFinal(context);
-
-    lastKeyFromSeed++;
-
-    logger.log("New key generated");
-    api.addSecretKey(uint8_hex(newKey));
-
-    return accountFromHexKey(uint8_hex(nacl.sign.keyPair.fromSecretKey(newKey).publicKey));
+    lastKeyFromSeed = index;
+    return key.account;
   }
 
   /**
@@ -282,6 +327,7 @@ module.exports = function (password) {
    * @param {string} hex - The secret key hex encoded
    * @throws An exception on invalid secret key length
    * @throws An exception on invalid hex format
+   * @returns {string} The freshly added account address
    */
   api.addSecretKey = function (hex) {
     if (hex.length != 64)
@@ -290,23 +336,11 @@ module.exports = function (password) {
     if (!/[0-9A-F]{64}/i.test(hex))
       throw "Invalid Hex Secret Key.";
 
-    keys.push(
-      {
-        priv: hex_uint8(hex),
-        pub: nacl.sign.keyPair.fromSecretKey(hex_uint8(hex)).publicKey,
-        account: accountFromHexKey(uint8_hex(nacl.sign.keyPair.fromSecretKey(hex_uint8(hex)).publicKey)),
-        balance: bigInt(0),
-        pendingBalance: bigInt(0),
-        lastBlock: "",
-        lastPendingBlock: "",
-        pendingBlocks: [],
-        subscribed: false,
-        chain: [],
-        representative: "",
-        label: ""
-      }
-    );
-    logger.log("New key added to wallet.");
+    let key = _private.newKeyDataFromSecret(hex_uint8(hex));
+    key = _private.addKey(key);
+    logger.log("New explicit key added to wallet.");
+
+    return key.account;
   }
 
   /**
@@ -330,6 +364,7 @@ module.exports = function (password) {
     var accounts = [];
     for (var i in keys) {
       accounts.push({
+        type: keys[i].type,
         account: keys[i].account,
         balance: bigInt(keys[i].balance),
         pendingBalance: bigInt(keys[i].pendingBalance),
@@ -697,7 +732,6 @@ module.exports = function (password) {
     logger.log("New send block waiting for work: " + blk.getHash(true));
 
     return blk;
-
   }
 
   api.addPendingReceiveBlock = function (sourceBlockHash, acc, from, amount = 0) {
@@ -891,8 +925,8 @@ module.exports = function (password) {
         for (let j in walletPendingBlocks) {
           if (walletPendingBlocks[j].getPrevious() == hash) {
             logger.log("Work received for block " + walletPendingBlocks[j].getHash(true) + " previous: " + hash);
-            walletPendingBlocks[j].setWork(work);
             var aux = walletPendingBlocks[j];
+            aux.setWork(work);
             try {
               api.confirmBlock(aux.getHash(true));
               remoteWork.splice(i, 1);
@@ -1135,18 +1169,34 @@ module.exports = function (password) {
    */
   api.pack = function () {
     var pack = {};
-    var labels = [];
-    for (var i in keys) {
-      if(keys[i].label !== null)
-        labels.push({key: i, label: keys[i].label});
-    }
 
-    pack.labels = labels;
     pack.seed = uint8_hex(seed);
     pack.last = lastKeyFromSeed;
     pack.version = version;
     pack.loginKey = loginKey;
     pack.minimumReceive = minimumReceive.toString();
+
+    pack.accounts = []
+    for (var i in keys) {
+      let key = keys[i];
+      switch (key.type) {
+      case KEY_TYPE.SEEDED:
+        pack.accounts.push({
+          type: KEY_TYPE.SEEDED,
+          label: key.label,
+          seedIndex: key.seedIndex,
+        });
+        break;
+      case KEY_TYPE.EXPLICIT:
+        pack.accounts.push({
+          type: KEY_TYPE.EXPLICIT,
+          label: key.label,
+          secretKey: uint8_hex(key.priv),
+        });
+        break;
+      default: throw "Unsupported key type"
+      }
+    }
 
     pack = JSON.stringify(pack);
     pack = stringToHex(pack);
@@ -1182,20 +1232,54 @@ module.exports = function (password) {
       throw "Wallet is corruped or has been tampered.";
 
     var walletData = JSON.parse(decryptedBytes.toString('utf8'));
+
+    if (!walletData.version || walletData.version == 1) {
+      // Migrate data to v2 format
+      let labels = walletData.labels || [];
+      walletData.accounts = [];
+      for(let i = 0; i < (walletData.last || 0) + 1; i++) {
+        let label = '';
+        for (let j in labels) {
+          if (labels[j].key == i) {
+            label = labels[j].label;
+            break;
+          }
+        }
+        walletData.accounts.push({
+          type: KEY_TYPE.SEEDED,
+          label: label,
+          seedIndex: i,
+        });
+      }
+      delete walletData.labels;
+      delete walletData.last;
+    }
   
     seed = hex_uint8(walletData.seed);
     minimumReceive = walletData.minimumReceive != undefined ? bigInt(walletData.minimumReceive) : bigInt("1000000000000000000000000");
     loginKey = walletData.loginKey != undefined ? walletData.loginKey : false;
-    var labels = walletData.labels != undefined ? walletData.labels : [];
-    for(let i = 0; i < walletData.last + 1; i++)
-    {
-      api.newKeyFromSeed();
-      for(let j in labels)
-      {
-        if(labels[j].key == i)
-          keys[i].label = labels[j].label;
+
+    for (let i in (walletData.accounts || [])) {
+      let acc = walletData.accounts[i];
+      switch (acc.type) {
+      case KEY_TYPE.SEEDED: {
+        let key = _private.newKeyDataFromSeed(acc.seedIndex);
+        key.label = acc.label;
+        _private.addKey(key);
+        lastKeyFromSeed = Math.max(lastKeyFromSeed, acc.seedIndex);
+        break;
+      }
+      case KEY_TYPE.EXPLICIT: {
+        let key = _private.newKeyDataFromSecret(hex_uint8(acc.secretKey));
+        key.label = acc.label;
+        _private.addKey(key);
+        break;
+      }
+      default: throw "Unsupported key type"
       }
     }
+
+    lastKeyFromSeed = Math.max(walletData.last || 0, lastKeyFromSeed);
     
     api.useAccount(keys[0].account);
 
