@@ -271,6 +271,7 @@ module.exports = function (password) {
       key[k] = o[k];
     }
     keys.push(key);
+    return key;
   }
 
   _private.newKeyDataFromSeed = function(index) {
@@ -307,15 +308,17 @@ module.exports = function (password) {
    * Derives a new secret key from the seed and adds it to the wallet
    *
    * @throws An exception if theres no seed
+   * @returns {string} The freshly added account address
    */
   api.newKeyFromSeed = function () {
     let index = lastKeyFromSeed + 1;
 
     let key = _private.newKeyDataFromSeed(index);
-    _private.addKey(key);
+    key = _private.addKey(key);
     logger.log("New seeded key added to wallet.");
 
     lastKeyFromSeed = index;
+    return key.account;
   }
 
   /**
@@ -324,6 +327,7 @@ module.exports = function (password) {
    * @param {string} hex - The secret key hex encoded
    * @throws An exception on invalid secret key length
    * @throws An exception on invalid hex format
+   * @returns {string} The freshly added account address
    */
   api.addSecretKey = function (hex) {
     if (hex.length != 64)
@@ -333,8 +337,10 @@ module.exports = function (password) {
       throw "Invalid Hex Secret Key.";
 
     let key = _private.newKeyDataFromSecret(hex_uint8(hex));
-    _private.addKey(key);
+    key = _private.addKey(key);
     logger.log("New explicit key added to wallet.");
+
+    return key.account;
   }
 
   /**
