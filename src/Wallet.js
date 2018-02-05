@@ -582,7 +582,7 @@ module.exports = function (password) {
         }
         else if (blk.getType() == 'send') {
           sum = sum.add(blk.getBalance());
-          break;
+          return sum;
         }
       }
     }
@@ -599,7 +599,7 @@ module.exports = function (password) {
         }
         else if (blk.getType() == 'send') {
           sum = sum.add(blk.getBalance());
-          break;
+          return sum;
         }
       }
     }
