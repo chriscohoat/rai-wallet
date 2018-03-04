@@ -28,7 +28,7 @@
     "big-integer": "^1.6.26",
     "blakejs": "^1.1.0",
     "buffer": "^5.0.8",
-    "nano-base32": "^1.0.0",
+    "nano-base32": "1.0.0",
     "pbkdf2": "^3.0.14",
     "tweetnacl": "git+https://git@github.com/jaimehgb/tweetnacl-js.git#ef9ea5fd95c3ca98128877c58e40ef1a711421ef"
   }
