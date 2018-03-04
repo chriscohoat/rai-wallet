@@ -2,8 +2,6 @@
 
 var blake = require('blakejs');
 var nanoBase32 = require('nano-base32')
-var hexToArraryBuffer = require('hex-to-array-buffer')
-var arrayBufferToHex = require('array-buffer-to-hex')
 
 export const stringFromHex = function(hex) {
   var hex = hex.toString();//force conversion
@@ -22,7 +20,7 @@ export const stringToHex = function (str) {
 }
 
 export const accountFromHexKey = function (hex) {
-  var key_bytes = new Uint8Array(hexToArraryBuffer(hex))
+  var key_bytes = hex_uint8(hex)
   var checksum_bytes = blake.blake2b(key_bytes, null, 5).reverse();
   var checksum = nanoBase32.encode(checksum_bytes);
   var c_account = nanoBase32.encode(key_bytes);
@@ -98,6 +96,32 @@ export const hex2dec = function(s) {
   return dec;
 }
 
+export const hex_uint8 = function (hex) {
+  var length = (hex.length / 2) | 0;
+  var uint8 = new Uint8Array(length);
+  for (let i = 0; i < length; i++) uint8[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return uint8;
+}
+
+export const uint8_hex = function (uint8) {
+  var hex = "";
+  let aux;
+  for (let i = 0; i < uint8.length; i++) {
+    aux = uint8[i].toString(16).toUpperCase();
+    if (aux.length == 1)
+      aux = '0' + aux;
+    hex += aux;
+    aux = '';
+  }
+  return (hex);
+}
+
+export const uint4_hex = function (uint4) {
+  var hex = "";
+  for (let i = 0; i < uint4.length; i++) hex += uint4[i].toString(16).toUpperCase();
+  return (hex);
+}
+
 function equal_arrays(array1, array2) {
   for (let i = 0; i < array1.length; i++) {
     if (array1[i] != array2[i])  return false;
@@ -114,7 +138,7 @@ export const keyFromAccount = function(account) {
       var hash_bytes = nanoBase32.decode(account_crop.substring(52, 60));
       var blake_hash = blake.blake2b(key_bytes, null, 5).reverse();
       if (equal_arrays(hash_bytes, blake_hash)) {
-        var key = arrayBufferToHex(key_bytes).toUpperCase();
+        var key = uint8_hex(key_bytes).toUpperCase();
         return key;
       }
       else
