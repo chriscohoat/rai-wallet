@@ -363,6 +363,9 @@ module.exports = function (password) {
   api.getAccounts = function () {
     var accounts = [];
     for (var i in keys) {
+      if (!keys[i].balance) {
+        keys[i].balance = 0
+      }
       accounts.push({
         type: keys[i].type,
         account: keys[i].account,
@@ -548,6 +551,9 @@ module.exports = function (password) {
     var bal = bigInt(0);
     var temp;
     for (let i in keys) {
+      if (!keys[i].balance) {
+        keys[i].balance = 0
+      }
       temp = keys[i].balance;
       bal = bal.add(temp);
     }
