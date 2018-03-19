@@ -1239,7 +1239,7 @@ module.exports = function (password) {
   api.load = function (data) {
     var decryptedBytes = api.decryptAndCheck(data);
     if(decryptedBytes === false)
-      throw "Wallet is corruped or has been tampered.";
+      throw "Wallet is corrupted or has been tampered.";
 
     var walletData = JSON.parse(decryptedBytes.toString('utf8'));
 
