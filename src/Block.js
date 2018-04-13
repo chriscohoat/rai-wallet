@@ -493,33 +493,41 @@ module.exports = function (isState = true) {
     if (!signed)
       throw "Block lacks signature";
     var obj = {};
-    obj.type = type;
 
-    switch (type) {
-      case 'send':
-        obj.previous = previous;
-        obj.destination = accountFromHexKey(destination);
-        obj.balance = balance;
-        break;
+    if (isState) {
+      obj.previous = previous;
+      obj.link = link;
+      obj.representative = representative;
+      obj.account = blockAccount;
+      obj.balance = balance;
+    } else {
+      obj.type = type;
+      switch (type) {
+        case 'send':
+          obj.previous = previous;
+          obj.destination = accountFromHexKey(destination);
+          obj.balance = balance;
+          break;
 
-      case 'receive':
-        obj.previous = previous;
-        obj.source = source;
-        break;
+        case 'receive':
+          obj.previous = previous;
+          obj.source = source;
+          break;
 
-      case 'open':
-        obj.source = source;
-        obj.representative = accountFromHexKey(representative ? representative : account);
-        obj.account = accountFromHexKey(account);
-        break;
+        case 'open':
+          obj.source = source;
+          obj.representative = accountFromHexKey(representative ? representative : account);
+          obj.account = accountFromHexKey(account);
+          break;
 
-      case 'change':
-        obj.previous = previous;
-        obj.representative = accountFromHexKey(representative);
-        break;
+        case 'change':
+          obj.previous = previous;
+          obj.representative = accountFromHexKey(representative);
+          break;
 
-      default:
-        throw "Invalid block type.";
+        default:
+          throw "Invalid block type.";
+      }
     }
 
     obj.work = work;
