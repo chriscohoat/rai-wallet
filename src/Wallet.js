@@ -617,7 +617,7 @@ module.exports = function (password) {
         if (blk.getType() == 'open' || blk.getType() == 'receive') {
           sum = sum.add(blk.getAmount());
         }
-        else if (blk.getType() == 'send') {
+        else if (blk.getType() == 'send' || blk.getType() == 'state') {
           sum = sum.add(blk.getBalance());
           return sum;
         }
@@ -634,7 +634,7 @@ module.exports = function (password) {
         if (blk.getType() == 'open' || blk.getType() == 'receive') {
           sum = sum.add(blk.getAmount());
         }
-        else if (blk.getType() == 'send') {
+        else if (blk.getType() == 'send' || blk.getType() == 'state') {
           sum = sum.add(blk.getBalance());
           return sum;
         }
