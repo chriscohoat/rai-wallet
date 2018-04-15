@@ -510,10 +510,36 @@ module.exports = function (password) {
   }
 
   api.getRepresentative = function (acc = false) {
-    if (!acc)
-      return current.representative;
-    api.useAccount(acc);
-    return current.representative;
+    var ret;
+    var temp;
+    if (acc) {
+      temp = currentIdx;
+      api.useAccount(acc);
+    }
+    if (current.representative)
+        ret = current.representative;
+    else {
+      // look for a state, change or open block on the chain
+      for (let i in current.pendingBlocks) {
+        if (current.pendingBlocks[i].getType() == 'open' || current.pendingBlocks[i].getType() == 'change' || current.pendingBlocks[i].getType() == 'state') {
+          ret = current.pendingBlocks[i].getRepresentative();
+          break;
+        }
+      }
+
+      if (!ret) {
+        for (let i in current.chain) {
+          if (current.chain[i].getType() == 'open' || current.chain[i].getType() == 'change' || current.chain[i].getType() == 'state') {
+            ret = current.chain[i].getRepresentative();
+            break;
+          }
+        }
+      }
+    }
+
+    if (temp)
+      api.useAccount(keys[temp].account);
+    return ret;
   }
 
   _private.setRepresentative = function (repr) {
@@ -567,6 +593,11 @@ module.exports = function (password) {
     }
   }
 
+  /**
+   * Calculates an account balance at a given block adding all receives until it reaches the account open block, or a send block.
+   * @param {string} blockHash - The block where the search will start
+   * @returns {bigInteger} - The calculated account balance
+   */
   api.getBalanceUpToBlock = function (blockHash) {
     if (current.chain.length <= 0)
       return bigInt(0);
@@ -711,10 +742,11 @@ module.exports = function (password) {
     var blk = new Block();
 
     blk.setSendParameters(current.lastPendingBlock, to, remaining);
-    blk.build();
-    api.signBlock(blk);
     blk.setAmount(amount);
     blk.setAccount(from);
+    blk.setRepresentative(api.getRepresentative());
+    blk.build();
+    api.signBlock(blk);
 
     current.lastPendingBlock = blk.getHash(true);
     _private.setBalance(remaining);
@@ -740,7 +772,7 @@ module.exports = function (password) {
     return blk;
   }
 
-  api.addPendingReceiveBlock = function (sourceBlockHash, acc, from, amount = 0) {
+  api.addPendingReceiveBlock = function (sourceBlockHash, acc, from, amount, representative = false) {
     amount = bigInt(amount);
     api.useAccount(acc);
     if (amount.lesser(minimumReceive)) {
@@ -765,15 +797,32 @@ module.exports = function (password) {
     }
 
     var blk = new Block();
-    if (current.lastPendingBlock.length == 64)
-      blk.setReceiveParameters(current.lastPendingBlock, sourceBlockHash);
+    if (current.lastPendingBlock.length == 64) {
+      // get the last block, if it's not at the end of the chain look at pending
+      var prev;
+      prev = api.getBlockByHash(current.lastPendingBlock);
+      if (!prev.getBalance('hex')) {
+        // set that block balance
+        prev.setBalance(api.getBalanceUpToBlock(prev.getHash(true)));
+      }
+      blk.setReceiveParameters(current.lastPendingBlock, sourceBlockHash, amount, prev);
+    }
     else
-      blk.setOpenParameters(sourceBlockHash, acc, raiwalletdotcomRepresentative);
-
+      blk.setOpenParameters(sourceBlockHash, acc, amount);
+    blk.setAccount(acc);
+    let rep;
+    if (representative !== false) {
+      if (keyFromAccount(representative)) {
+        rep = representative;
+      }
+    } else {
+      rep = api.getRepresentative();
+    }
+    if (!rep) // first block
+      rep = raiwalletdotcomRepresentative;
+    blk.setRepresentative(rep);
     blk.build();
     api.signBlock(blk);
-    blk.setAmount(amount);
-    blk.setAccount(acc);
     blk.setOrigin(from);
 
     current.lastPendingBlock = blk.getHash(true);
@@ -843,6 +892,24 @@ module.exports = function (password) {
     for (let i in walletPendingBlocks) {
       if (walletPendingBlocks[i].getHash(true) == blockHash)
         return walletPendingBlocks[i];
+    }
+    return false;
+  }
+
+  /**
+   * Looks for the block in the current account chain and pending list
+   * @param {string} blockHash - The hash of the block looked for, hex encoded
+   * @returns the block if found, false if not
+   */
+  api.getBlockByHash = function (blockHash) {
+    for (let i in current.pendingBlocks) {
+      if (current.pendingBlocks[i].getHash(true) == blockHash) 
+        return current.pendingBlocks[i];
+    }
+
+    for (let i in current.chain) {
+      if (current.chain[i].getHash(true) == blockHash)
+        return current.chain[i];
     }
     return false;
   }
@@ -1044,7 +1111,28 @@ module.exports = function (password) {
         else 
         {
           if (blk.getPrevious() == current.chain[current.chain.length - 1].getHash(true)) {
-            if (blk.getType() == 'receive')
+            if (blk.getType() == 'state')
+            {
+              _private.setRepresentative(blk.getRepresentative());
+
+              // check if it's sending money, and if it is, check if the amount is the one intended
+              let previousBlk = current.chain[current.chain.length - 1];
+              let previousBalance = api.getBalanceUpToBlock(previousBlk.getHash(true));
+              if (blk.getBalance().lesser(previousBalance)) {
+                // it's sending money
+                if (blk.isImmutable()) {
+                  // block is set as immutable when its being imported from the server, it has already been confirmed and cannot change
+                  // so if the hash is correct, the balance is correct and all. Setting amount now for informative purposes
+                  blk.setAmount(previousBalance.minus(blk.getBalance()));
+                } else if (previousBalance.minus(blk.getBalance()).neq(blk.getAmount())) {
+                  // amount being sent does not match amount intended to be sent
+                  logger.error('Sending incorrect amount (' + blk.getAmount().toString() + ') (' + (real.minus(blk.getBalance('dec')).toString() ) + ')');
+                  api.recalculateWalletBalances();
+                  throw "Incorrect send amount.";
+                }
+              }
+            }
+            else if (blk.getType() == 'receive')
             {
               _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
               _private.setBalance(api.getBalance().add(blk.getAmount()));
