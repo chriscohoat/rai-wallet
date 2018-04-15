@@ -733,18 +733,27 @@ module.exports = function (password) {
     logger.log("Block ready to be broadcasted: " + blk.getHash(true));
   }
 
-  api.addPendingSendBlock = function (from, to, amount = 0) {
+  api.addPendingSendBlock = function (from, to, amount = 0, representative = false) {
     api.useAccount(from);
     amount = bigInt(amount);
 
     var bal = api.getBalanceUpToBlock(0);
     var remaining = bal.minus(amount);
     var blk = new Block();
+    var rep;
+
+    if (representative !== false)
+      rep = representative;
+    else {
+      rep = api.getRepresentative();
+      if (!representative)
+        rep = raiwalletdotcomRepresentative;
+    }
 
     blk.setSendParameters(current.lastPendingBlock, to, remaining);
     blk.setAmount(amount);
     blk.setAccount(from);
-    blk.setRepresentative(api.getRepresentative());
+    blk.setRepresentative(rep);
     blk.build();
     api.signBlock(blk);
 
