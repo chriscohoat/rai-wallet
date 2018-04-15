@@ -32,6 +32,7 @@ module.exports = function (isState = true) {
   var representative; // open and change
   var account;        // open
   var previousBlock; // the whole previous block, data type = Block 
+  var link;           // state blocks
 
   var version = 1;		// to make updates compatible with previous versions of the wallet
 
@@ -66,7 +67,7 @@ module.exports = function (isState = true) {
       if (!representative) {
         if (previousBlock) {
           if (previousBlock.getRepresentative()) {
-            representative = previousBlock.getRepresentative();
+            representative = keyFromAccount(previousBlock.getRepresentative());
           }
         }
 
@@ -84,7 +85,7 @@ module.exports = function (isState = true) {
       blake.blake2bUpdate(context, hex_uint8(STATE_BLOCK_PREAMBLE));
       blake.blake2bUpdate(context, hex_uint8(keyFromAccount(blockAccount)));
       blake.blake2bUpdate(context, hex_uint8(previous));
-      blake.blake2bUpdate(context, hex_uint8(keyFromAccount(representative)));
+      blake.blake2bUpdate(context, hex_uint8(representative));
       blake.blake2bUpdate(context, hex_uint8(balance));
       blake.blake2bUpdate(context, hex_uint8(link));
       hash = uint8_hex(blake.blake2bFinal(context));
@@ -140,8 +141,10 @@ module.exports = function (isState = true) {
    * @throws An exception on invalid balance
    */
   api.setSendParameters = function (previousBlockHash, destinationAccount, balanceRemaining, previousBlk = false) {
-    if (previousBlk)
+    if (previousBlk) {
+      previousBlock = previousBlk;
       previousBlockHash = previousBlk.getHash(true);
+    }
     
     if (!/[0-9A-F]{64}/i.test(previousBlockHash))
       throw "Invalid previous block hash.";
@@ -195,7 +198,7 @@ module.exports = function (isState = true) {
       if (receiveAmount.lesser(0))
         throw "Invalid receive amount.";
       link = source;
-      balance = previousBlk.getBalance().add(receiveAmount);
+      balance = dec2hex(previousBlk.getBalance().add(receiveAmount).toString(), 16);
     } else {
       type = 'receive';
     }
@@ -207,12 +210,13 @@ module.exports = function (isState = true) {
    *
    * @param {string} sourceBlockHash - The hash of the send block which is going to be received, 32 byte hex encoded
    * @param {string} newAccount - The XRB account which is being created
+   * @param {bigInt} receiveAmount - The amount received, or the one which was sent frome the origin account (only for state blocks) 
    * @param {string} representativeAccount - The account to be set as representative, if none, its self assigned
    * @throws An exception on invalid sourceBlockHash
    * @throws An exception on invalid account
    * @throws An exception on invalid representative account
    */
-  api.setOpenParameters = function (sourceBlockHash, newAccount, representativeAccount = null) {
+  api.setOpenParameters = function (sourceBlockHash, newAccount, receiveAmount = false, representativeAccount = null) {
     if (!/[0-9A-F]{64}/i.test(sourceBlockHash))
       throw "Invalid source block hash.";
 
@@ -232,9 +236,17 @@ module.exports = function (isState = true) {
     else
       representative = account;
 
+    if (isState) {
+      if (!receiveAmount)
+        throw "Invalid receive amount.";
+      receiveAmount = bigInt(receiveAmount);
+      previous = HEX_32_BYTE_ZERO;
+      balance = dec2hex(receiveAmount.toString(), 16);
+      link = sourceBlockHash;
+    } else {
+      type = 'open';
+    }
     source = sourceBlockHash;
-    type = 'open';
-
   }
 
   /**
@@ -344,12 +356,21 @@ module.exports = function (isState = true) {
         // try to pull it from the previous block
         rep = false;
         if (previousBlock) {
-          rep = previousBlock.getRepresentative();
+          rep = keyFromAccount(previousBlock.getRepresentative());
         }
         if (!rep)
           throw "Representative passed is invalid. Also, unable to get the one used on the previous block.";
+        representative = rep;
       }
     }
+  }
+
+  /**
+   * Sets the account balance at this block
+   * @param {bigInt} bal
+   */
+  api.setBalance = function (bal) {
+    balance = dec2hex(bigInt(bal).toString(), 16);
   }
 
   /**
@@ -389,10 +410,14 @@ module.exports = function (isState = true) {
   }
 
   api.getType = function () {
+    if (isState)
+      return 'state';
     return type;
   }
 
   api.getBalance = function (format = 'dec') {
+    if (!balance) // it might not be set
+      return false;
     if (format == 'dec') {
       var dec = bigInt(hex2dec(balance));
       return dec;
@@ -406,7 +431,7 @@ module.exports = function (isState = true) {
    * @returns {string} The previous block hash
    */
   api.getPrevious = function () {
-    if (type == 'open')
+    if (type == 'open' || previous == HEX_32_BYTE_ZERO)
       return account;
     return previous;
   }
@@ -495,11 +520,12 @@ module.exports = function (isState = true) {
     var obj = {};
 
     if (isState) {
+      obj.type = 'state';
       obj.previous = previous;
       obj.link = link;
-      obj.representative = representative;
+      obj.representative = accountFromHexKey(representative); // state blocks are processed with the rep encoded as an account
       obj.account = blockAccount;
-      obj.balance = balance;
+      obj.balance = hex2dec(balance); // needs to be processed in dec in state blocks
     } else {
       obj.type = type;
       switch (type) {
@@ -559,6 +585,7 @@ module.exports = function (isState = true) {
     else
       var obj = json;
 
+    isState = false;
     switch (obj.type) {
       case 'send':
         type = 'send';
@@ -584,6 +611,15 @@ module.exports = function (isState = true) {
         type = 'change';
         previous = obj.previous;
         representative = keyFromAccount(obj.representative);
+        break;
+
+      case 'state':
+        isState = true;
+        blockAccount = obj.account;
+        previous = obj.previous;
+        api.setRepresentative(obj.representative);
+        balance = dec2hex(obj.balance);
+        link = obj.link;
         break;
 
       default:
