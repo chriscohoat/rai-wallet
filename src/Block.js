@@ -618,7 +618,7 @@ module.exports = function (isState = true) {
         blockAccount = obj.account;
         previous = obj.previous;
         api.setRepresentative(obj.representative);
-        balance = dec2hex(obj.balance);
+        balance = dec2hex(obj.balance, 16);
         link = obj.link;
         break;
 
