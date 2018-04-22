@@ -866,11 +866,15 @@ module.exports = function (password) {
     if (!current.lastPendingBlock)
       throw "There needs to be at least 1 block in the chain.";
 
+    let accBalance = api.getBalanceUpToBlock(current.lastPendingBlock);
+    // change = zero send to the burn account
     var blk = new Block();
-    blk.setChangeParameters(current.lastPendingBlock, repr);
+    blk.setSendParameters(current.lastPendingBlock, accountFromHexKey(HEX_32_BYTE_ZERO), accBalance);
+    blk.setRepresentative(repr);
+    blk.setAmount(0);
+    blk.setAccount(acc);
     blk.build();
     api.signBlock(blk);
-    blk.setAccount(acc);
 
     current.lastPendingBlock = blk.getHash(true);
     current.pendingBlocks.push(blk);
