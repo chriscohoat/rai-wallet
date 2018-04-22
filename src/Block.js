@@ -454,7 +454,7 @@ module.exports = function (isState = true) {
   }
 
   api.getRepresentative = function () {
-    if (type == 'change' || type == 'open' || type == 'state')
+    if (type == 'change' || type == 'open' || isState)
       return accountFromHexKey(representative);
     else
       return false;
