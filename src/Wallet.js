@@ -14,6 +14,7 @@ var SUPPORTED_ENCRYPTION_VERSION = 3;
 var SALT_BYTES = 16;
 var KEY_BIT_LEN = 256;
 var BLOCK_BIT_LEN = 128;
+var HEX_32_BYTE_ZERO = '0000000000000000000000000000000000000000000000000000000000000000';
 
 var ALGO = {
   SHA1: 'sha1',
@@ -831,6 +832,7 @@ module.exports = function (password) {
       rep = raiwalletdotcomRepresentative;
     blk.setRepresentative(rep);
     blk.build();
+    blk.setAmount(amount);
     api.signBlock(blk);
     blk.setOrigin(from);
 
@@ -1108,7 +1110,7 @@ module.exports = function (password) {
         if (current.chain.length == 0)
         {
           // open block
-          if (blk.getType() != 'open' && !lightWallet)
+          if ( ( blk.getType() != 'open' || ( blk.getType() == 'state' && blk.getPrevious() != HEX_32_BYTE_ZERO ) ) && !lightWallet )
             throw "First block needs to be 'open'.";
           current.chain.push(blk);
           if(broadcast)

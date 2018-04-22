@@ -10,7 +10,7 @@ var blockID = { invalid: 0, not_a_block: 1, send: 2, receive: 3, open: 4, change
 
 module.exports = function (isState = true) {
   var api = {};       // public methods
-  var lowLevel = {};  // private methods
+  var _private = {};  // private methods
   var data = "";      // raw block to be relayed to the network directly
   var type;           // block type
   var hash;           // block hash
@@ -23,6 +23,8 @@ module.exports = function (isState = true) {
   var origin;			// account sending money in case of receive or open block
   var immutable = false; // if true means block has already been confirmed and cannot be changed, some checks are ignored
   var isState = isState; // state or legacy block
+  var isSending;
+  var isReceiving;
 
   var previous;       // send, receive and change // it's the block hash
   var destination;    // send
@@ -155,6 +157,7 @@ module.exports = function (isState = true) {
       throw "Invalid destination account.";
     }
 
+    _private.reset();
     previous = previousBlockHash;
     destination = pk;
     decBalance = balanceRemaining;
@@ -162,6 +165,7 @@ module.exports = function (isState = true) {
 
     if (isState) {
       link = destination;
+      isSending = true;
     } else {
       type = 'send';
     }
@@ -191,6 +195,7 @@ module.exports = function (isState = true) {
         throw "Invalid 'previousBlk' parameter.";
     }
 
+    _private.reset();
     previous = previousBlockHash;
     source = sourceBlockHash;
     if (isState) {
@@ -199,6 +204,7 @@ module.exports = function (isState = true) {
         throw "Invalid receive amount.";
       link = source;
       balance = dec2hex(previousBlk.getBalance().add(receiveAmount).toString(), 16);
+      isReceiving = true;
     } else {
       type = 'receive';
     }
@@ -239,10 +245,12 @@ module.exports = function (isState = true) {
     if (isState) {
       if (!receiveAmount)
         throw "Invalid receive amount.";
+      _private.reset();
       receiveAmount = bigInt(receiveAmount);
       previous = HEX_32_BYTE_ZERO;
       balance = dec2hex(receiveAmount.toString(), 16);
       link = sourceBlockHash;
+      isReceiving = true;
     } else {
       type = 'open';
     }
@@ -267,6 +275,7 @@ module.exports = function (isState = true) {
       throw "Invalid representative account.";
     }
 
+    _private.reset();
     previous = previousBlockHash;
     type = "change";
   }
@@ -338,6 +347,10 @@ module.exports = function (isState = true) {
   api.setOrigin = function (acc) {
     if (type == 'receive' || type == 'open')
       origin = acc;
+    else if (isState) {
+      isReceiving = true;
+      origin = acc;
+    }
   }
 
   /**
@@ -378,9 +391,9 @@ module.exports = function (isState = true) {
    * @returns originAccount
    */
   api.getOrigin = function () {
-    if (type == 'receive' || type == 'open')
+    if (type == 'receive' || type == 'open' || (isState && isReceiving))
       return origin;
-    if (type == 'send')
+    if (type == 'send' || (isState && isSending))
       return blockAccount;
     return false;
   }
@@ -390,9 +403,9 @@ module.exports = function (isState = true) {
    * @returns destinationAccount
    */
   api.getDestination = function () {
-    if (type == 'send')
+    if (type == 'send' || ( isSending && isState) )
       return accountFromHexKey(destination);
-    if (type == 'receive' || type == 'open')
+    if (type == 'receive' || type == 'open' || (isState && isReceiving))
       return blockAccount;
   }
 
@@ -445,6 +458,16 @@ module.exports = function (isState = true) {
       return accountFromHexKey(representative);
     else
       return false;
+  }
+
+  api.getLink = function () {
+    if (isState)
+      return link;
+  }
+
+  api.getLinkAsAccount = function () {
+    if (isState)
+      return accountFromHexKey(link);
   }
 
   api.ready = function () {
@@ -685,6 +708,17 @@ module.exports = function (isState = true) {
 
   api.setVersion = function (v) {
     version = v;
+  }
+
+  _private.reset = function () {
+    isSending = false;
+    isReceiving = false;
+    signed = false;
+    worked = false;
+    signature = null;
+    work = null;
+    origin = false;
+    destination = false;
   }
 
   return api;
