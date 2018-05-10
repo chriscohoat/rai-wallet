@@ -29,10 +29,15 @@ export const accountFromHexKey = function (hex) {
 
 export const parseXRBAccount = function(str) {
   var i = str.indexOf('xrb_');
-  if (i == -1)
+  var acc = false;
+  if (i != -1)
+    acc = str.slice(i, i + 64);
+  else
     i = str.indexOf('nano_');
+
   if (i != -1) {
-    var acc = str.slice(i, i + 64);
+    if(!acc)
+      acc = str.slice(i, i + 65);
     try {
       keyFromAccount(acc);
       return acc;
