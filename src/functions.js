@@ -29,6 +29,8 @@ export const accountFromHexKey = function (hex) {
 
 export const parseXRBAccount = function(str) {
   var i = str.indexOf('xrb_');
+  if (i == -1)
+    i = str.indexOf('nano_');
   if (i != -1) {
     var acc = str.slice(i, i + 64);
     try {
@@ -130,8 +132,9 @@ function equal_arrays(array1, array2) {
 }
 
 export const keyFromAccount = function(account) {
-  if ((account.startsWith('xrb_1') || account.startsWith('xrb_3')) && (account.length == 64)) {
-    var account_crop = account.substring(4, 64);
+  if ( ( (account.startsWith('xrb_1') || account.startsWith('xrb_3')) && (account.length == 64) )
+  || ( (account.startsWith('nano_1') || account.startsWith('nano_3')) && (account.length == 65) ) ) {
+    var account_crop = account.replace('xrb_', '').replace('nano_', '');
     var isValid = /^[13456789abcdefghijkmnopqrstuwxyz]+$/.test(account_crop);
     if (isValid) {
       var key_bytes = nanoBase32.decode(account_crop.substring(0, 52));
