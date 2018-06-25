@@ -568,7 +568,7 @@ module.exports = function (password) {
   }
 
   api.getBalanceUpToBlock = function (blockHash) {
-    if (current.chain.length <= 0)
+    if (current.chain.length + current.pendingBlocks.length === 0)
       return bigInt(0);
 
     var sum = bigInt(0);
