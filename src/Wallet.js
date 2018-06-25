@@ -600,9 +600,9 @@ module.exports = function (password) {
    * @returns {bigInteger} - The calculated account balance
    */
   api.getBalanceUpToBlock = function (blockHash) {
-    if (current.chain.length <= 0)
+    if (current.chain.length + current.pendingBlocks.length === 0)
       return bigInt(0);
-
+    
     var sum = bigInt(0);
     var found = blockHash === 0 ? true : false;
     var blk;
