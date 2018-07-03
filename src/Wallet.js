@@ -747,7 +747,7 @@ module.exports = function (password) {
       rep = representative;
     else {
       rep = api.getRepresentative();
-      if (!representative)
+      if (!rep)
         rep = raiwalletdotcomRepresentative;
     }
 
