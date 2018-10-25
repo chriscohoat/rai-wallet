@@ -15,6 +15,8 @@ var SALT_BYTES = 16;
 var KEY_BIT_LEN = 256;
 var BLOCK_BIT_LEN = 128;
 var HEX_32_BYTE_ZERO = '0000000000000000000000000000000000000000000000000000000000000000';
+var EPOCH_LINK = '65706F636820763120626C6F636B000000000000000000000000000000000000';
+var GENESIS_ACCOUNT = 'xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3';
 
 var ALGO = {
   SHA1: 'sha1',
@@ -482,7 +484,12 @@ module.exports = function (password) {
 
   api.verifyBlock = function (block, acc = "") {
     var account = block.getAccount() ? block.getAccount() : acc;
-    return api.verifyBlockSignature(block.getHash(true), block.getSignature(), block.getAccount());
+    if (block.getType() == 'state') {
+      if (block.getLink() == EPOCH_LINK) {
+        account = GENESIS_ACCOUNT;
+      }
+    }
+    return api.verifyBlockSignature(block.getHash(true), block.getSignature(), account);
   }
 
   /**
