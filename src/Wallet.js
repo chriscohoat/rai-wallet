@@ -14,6 +14,9 @@ var SUPPORTED_ENCRYPTION_VERSION = 3;
 var SALT_BYTES = 16;
 var KEY_BIT_LEN = 256;
 var BLOCK_BIT_LEN = 128;
+var HEX_32_BYTE_ZERO = '0000000000000000000000000000000000000000000000000000000000000000';
+var EPOCH_LINK = '65706F636820763120626C6F636B000000000000000000000000000000000000';
+var GENESIS_ACCOUNT = 'xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3';
 
 var ALGO = {
   SHA1: 'sha1',
@@ -481,7 +484,12 @@ module.exports = function (password) {
 
   api.verifyBlock = function (block, acc = "") {
     var account = block.getAccount() ? block.getAccount() : acc;
-    return api.verifyBlockSignature(block.getHash(true), block.getSignature(), block.getAccount());
+    if (block.getType() == 'state') {
+      if (block.getLink() == EPOCH_LINK) {
+        account = GENESIS_ACCOUNT;
+      }
+    }
+    return api.verifyBlockSignature(block.getHash(true), block.getSignature(), account);
   }
 
   /**
@@ -510,10 +518,36 @@ module.exports = function (password) {
   }
 
   api.getRepresentative = function (acc = false) {
-    if (!acc)
-      return current.representative;
-    api.useAccount(acc);
-    return current.representative;
+    var ret;
+    var temp;
+    if (acc) {
+      temp = currentIdx;
+      api.useAccount(acc);
+    }
+    if (current.representative)
+        ret = current.representative;
+    else {
+      // look for a state, change or open block on the chain
+      for (let i in current.pendingBlocks) {
+        if (current.pendingBlocks[i].getType() == 'open' || current.pendingBlocks[i].getType() == 'change' || current.pendingBlocks[i].getType() == 'state') {
+          ret = current.pendingBlocks[i].getRepresentative();
+          break;
+        }
+      }
+
+      if (!ret) {
+        for (let i in current.chain) {
+          if (current.chain[i].getType() == 'open' || current.chain[i].getType() == 'change' || current.chain[i].getType() == 'state') {
+            ret = current.chain[i].getRepresentative();
+            break;
+          }
+        }
+      }
+    }
+
+    if (temp)
+      api.useAccount(keys[temp].account);
+    return ret;
   }
 
   _private.setRepresentative = function (repr) {
@@ -567,10 +601,15 @@ module.exports = function (password) {
     }
   }
 
+  /**
+   * Calculates an account balance at a given block adding all receives until it reaches the account open block, or a send block.
+   * @param {string} blockHash - The block where the search will start
+   * @returns {bigInteger} - The calculated account balance
+   */
   api.getBalanceUpToBlock = function (blockHash) {
     if (current.chain.length + current.pendingBlocks.length === 0)
       return bigInt(0);
-
+    
     var sum = bigInt(0);
     var found = blockHash === 0 ? true : false;
     var blk;
@@ -586,7 +625,7 @@ module.exports = function (password) {
         if (blk.getType() == 'open' || blk.getType() == 'receive') {
           sum = sum.add(blk.getAmount());
         }
-        else if (blk.getType() == 'send') {
+        else if (blk.getType() == 'send' || blk.getType() == 'state') {
           sum = sum.add(blk.getBalance());
           return sum;
         }
@@ -603,7 +642,7 @@ module.exports = function (password) {
         if (blk.getType() == 'open' || blk.getType() == 'receive') {
           sum = sum.add(blk.getAmount());
         }
-        else if (blk.getType() == 'send') {
+        else if (blk.getType() == 'send' || blk.getType() == 'state') {
           sum = sum.add(blk.getBalance());
           return sum;
         }
@@ -702,19 +741,29 @@ module.exports = function (password) {
     logger.log("Block ready to be broadcasted: " + blk.getHash(true));
   }
 
-  api.addPendingSendBlock = function (from, to, amount = 0) {
+  api.addPendingSendBlock = function (from, to, amount = 0, representative = false) {
     api.useAccount(from);
     amount = bigInt(amount);
 
     var bal = api.getBalanceUpToBlock(0);
     var remaining = bal.minus(amount);
     var blk = new Block();
+    var rep;
+
+    if (representative !== false)
+      rep = representative;
+    else {
+      rep = api.getRepresentative();
+      if (!rep)
+        rep = raiwalletdotcomRepresentative;
+    }
 
     blk.setSendParameters(current.lastPendingBlock, to, remaining);
-    blk.build();
-    api.signBlock(blk);
     blk.setAmount(amount);
     blk.setAccount(from);
+    blk.setRepresentative(rep);
+    blk.build();
+    api.signBlock(blk);
 
     current.lastPendingBlock = blk.getHash(true);
     _private.setBalance(remaining);
@@ -740,7 +789,7 @@ module.exports = function (password) {
     return blk;
   }
 
-  api.addPendingReceiveBlock = function (sourceBlockHash, acc, from, amount = 0) {
+  api.addPendingReceiveBlock = function (sourceBlockHash, acc, from, amount, representative = false) {
     amount = bigInt(amount);
     api.useAccount(acc);
     if (amount.lesser(minimumReceive)) {
@@ -765,15 +814,33 @@ module.exports = function (password) {
     }
 
     var blk = new Block();
-    if (current.lastPendingBlock.length == 64)
-      blk.setReceiveParameters(current.lastPendingBlock, sourceBlockHash);
+    if (current.lastPendingBlock.length == 64) {
+      // get the last block, if it's not at the end of the chain look at pending
+      var prev;
+      prev = api.getBlockByHash(current.lastPendingBlock);
+      if (!prev.getBalance('hex')) {
+        // set that block balance
+        prev.setBalance(api.getBalanceUpToBlock(prev.getHash(true)));
+      }
+      blk.setReceiveParameters(current.lastPendingBlock, sourceBlockHash, amount, prev);
+    }
     else
-      blk.setOpenParameters(sourceBlockHash, acc, raiwalletdotcomRepresentative);
-
-    blk.build();
-    api.signBlock(blk);
-    blk.setAmount(amount);
+      blk.setOpenParameters(sourceBlockHash, acc, amount);
     blk.setAccount(acc);
+    let rep;
+    if (representative !== false) {
+      if (keyFromAccount(representative)) {
+        rep = representative;
+      }
+    } else {
+      rep = api.getRepresentative();
+    }
+    if (!rep) // first block
+      rep = raiwalletdotcomRepresentative;
+    blk.setRepresentative(rep);
+    blk.build();
+    blk.setAmount(amount);
+    api.signBlock(blk);
     blk.setOrigin(from);
 
     current.lastPendingBlock = blk.getHash(true);
@@ -806,11 +873,15 @@ module.exports = function (password) {
     if (!current.lastPendingBlock)
       throw "There needs to be at least 1 block in the chain.";
 
+    let accBalance = api.getBalanceUpToBlock(current.lastPendingBlock);
+    // change = zero send to the burn account
     var blk = new Block();
-    blk.setChangeParameters(current.lastPendingBlock, repr);
+    blk.setSendParameters(current.lastPendingBlock, accountFromHexKey(HEX_32_BYTE_ZERO), accBalance);
+    blk.setRepresentative(repr);
+    blk.setAmount(0);
+    blk.setAccount(acc);
     blk.build();
     api.signBlock(blk);
-    blk.setAccount(acc);
 
     current.lastPendingBlock = blk.getHash(true);
     current.pendingBlocks.push(blk);
@@ -843,6 +914,24 @@ module.exports = function (password) {
     for (let i in walletPendingBlocks) {
       if (walletPendingBlocks[i].getHash(true) == blockHash)
         return walletPendingBlocks[i];
+    }
+    return false;
+  }
+
+  /**
+   * Looks for the block in the current account chain and pending list
+   * @param {string} blockHash - The hash of the block looked for, hex encoded
+   * @returns the block if found, false if not
+   */
+  api.getBlockByHash = function (blockHash) {
+    for (let i in current.pendingBlocks) {
+      if (current.pendingBlocks[i].getHash(true) == blockHash) 
+        return current.pendingBlocks[i];
+    }
+
+    for (let i in current.chain) {
+      if (current.chain[i].getHash(true) == blockHash)
+        return current.chain[i];
     }
     return false;
   }
@@ -1032,7 +1121,7 @@ module.exports = function (password) {
         if (current.chain.length == 0)
         {
           // open block
-          if (blk.getType() != 'open' && !lightWallet)
+          if ( ( blk.getType() != 'open' || ( blk.getType() == 'state' && blk.getPrevious() != HEX_32_BYTE_ZERO ) ) && !lightWallet )
             throw "First block needs to be 'open'.";
           current.chain.push(blk);
           if(broadcast)
@@ -1044,7 +1133,28 @@ module.exports = function (password) {
         else 
         {
           if (blk.getPrevious() == current.chain[current.chain.length - 1].getHash(true)) {
-            if (blk.getType() == 'receive')
+            if (blk.getType() == 'state')
+            {
+              _private.setRepresentative(blk.getRepresentative());
+
+              // check if it's sending money, and if it is, check if the amount is the one intended
+              let previousBlk = current.chain[current.chain.length - 1];
+              let previousBalance = api.getBalanceUpToBlock(previousBlk.getHash(true));
+              if (blk.getBalance().lesser(previousBalance)) {
+                // it's sending money
+                if (blk.isImmutable()) {
+                  // block is set as immutable when its being imported from the server, it has already been confirmed and cannot change
+                  // so if the hash is correct, the balance is correct and all. Setting amount now for informative purposes
+                  blk.setAmount(previousBalance.minus(blk.getBalance()));
+                } else if (previousBalance.minus(blk.getBalance()).neq(blk.getAmount())) {
+                  // amount being sent does not match amount intended to be sent
+                  logger.error('Sending incorrect amount (' + blk.getAmount().toString() + ') (' + (real.minus(blk.getBalance('dec')).toString() ) + ')');
+                  api.recalculateWalletBalances();
+                  throw "Incorrect send amount.";
+                }
+              }
+            }
+            else if (blk.getType() == 'receive')
             {
               _private.setPendingBalance(api.getPendingBalance().minus(blk.getAmount()));
               _private.setBalance(api.getBalance().add(blk.getAmount()));

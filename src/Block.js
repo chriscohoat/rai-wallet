@@ -1,19 +1,16 @@
-var MAGIC_NUMBER = "5243";   // 0x52 0x43
-var VERSION_MAX = "01";      // 0x01
-var VERSION_MIN = "01";      // 0x01
-var VERSION_USING = "01";    // 0x01
-var EXTENSIONS = "0002";     // 0x00 0x02
 var RAI_TO_RAW = "000000000000000000000000";
 var MAIN_NET_WORK_THRESHOLD = "ffffffc000000000";
+var STATE_BLOCK_PREAMBLE = '0000000000000000000000000000000000000000000000000000000000000006';
+var HEX_32_BYTE_ZERO = '0000000000000000000000000000000000000000000000000000000000000000';
 var blake = require('blakejs');
 var bigInt = require('big-integer');
 import { hex_uint8, dec2hex, uint8_hex, accountFromHexKey, keyFromAccount, hex2dec, stringFromHex } from './functions';
 
 var blockID = { invalid: 0, not_a_block: 1, send: 2, receive: 3, open: 4, change: 5 }
 
-module.exports = function () {
+module.exports = function (isState = true) {
   var api = {};       // public methods
-  var lowLevel = {};  // private methods
+  var _private = {};  // private methods
   var data = "";      // raw block to be relayed to the network directly
   var type;           // block type
   var hash;           // block hash
@@ -25,17 +22,21 @@ module.exports = function () {
   var blockAccount;   // account owner of this block
   var origin;			// account sending money in case of receive or open block
   var immutable = false; // if true means block has already been confirmed and cannot be changed, some checks are ignored
+  var isState = isState; // state or legacy block
+  var isSending;
+  var isReceiving;
 
-  var previous;       // send, receive and change
+  var previous;       // send, receive and change // it's the block hash
   var destination;    // send
   var balance;        // send
   var decBalance;
   var source;         // receive and open
   var representative; // open and change
   var account;        // open
+  var previousBlock; // the whole previous block, data type = Block 
+  var link;           // state blocks
 
   var version = 1;		// to make updates compatible with previous versions of the wallet
-  var BLOCK_MAX_VERSION = 1;
 
   /**
    * Builds the block and calculates the hash
@@ -45,61 +46,86 @@ module.exports = function () {
    */
   api.build = function () {
 
-    switch (type) {
-      case 'send':
-        data = "";
-        data += MAGIC_NUMBER + VERSION_MAX + VERSION_USING + VERSION_MIN + uint8_hex(blockID[type]) + EXTENSIONS;
-        data += previous;
-        data += destination
-        data += balance;
+    if (isState) {
+      // check if all fields are set
+      if (!blockAccount) {
+        if (previousBlock) {
+          if (previousBlock.getAccount()){
+            blockAccount = previousBlock.getAccount();
+          }
+        }
 
-        var context = blake.blake2bInit(32, null);
-        blake.blake2bUpdate(context, hex_uint8(previous));
-        blake.blake2bUpdate(context, hex_uint8(destination));
-        blake.blake2bUpdate(context, hex_uint8(balance));
-        hash = uint8_hex(blake.blake2bFinal(context));
-        break;
+        if (!blockAccount) // still?
+          throw "Block is of type state and is missing the owner account. Use setAccount to set it, or switch to legacy blocks.";
+      }
 
-      case 'receive':
-        data = "";
-        data += MAGIC_NUMBER + VERSION_MAX + VERSION_USING + VERSION_MIN + uint8_hex(blockID[type]) + EXTENSIONS;
-        data += previous;
-        data += source;
+      if (!previous) {
+        if (!previousBlock) {
+          throw "Previous block is missing.";
+        }
+        previous = previousBlock.getHash(true);
+      }
 
-        var context = blake.blake2bInit(32, null);
-        blake.blake2bUpdate(context, hex_uint8(previous));
-        blake.blake2bUpdate(context, hex_uint8(source));
-        hash = uint8_hex(blake.blake2bFinal(context));
-        break;
+      if (!representative) {
+        if (previousBlock) {
+          if (previousBlock.getRepresentative()) {
+            representative = keyFromAccount(previousBlock.getRepresentative());
+          }
+        }
 
-      case 'open':
-        data = "";
-        data += MAGIC_NUMBER + VERSION_MAX + VERSION_USING + VERSION_MIN + uint8_hex(blockID[type]) + EXTENSIONS;
-        data += source;
-        data += representative;
-        data += account;
+        if (!representative) // still?
+          throw 'Account representative is missing.';
+      }
 
-        var context = blake.blake2bInit(32, null);
-        blake.blake2bUpdate(context, hex_uint8(source));
-        blake.blake2bUpdate(context, hex_uint8(representative));
-        blake.blake2bUpdate(context, hex_uint8(account));
-        hash = uint8_hex(blake.blake2bFinal(context));
-        break;
+      if (!balance)
+        throw "Balance is not set.";
+      if (!link)
+        throw "State block link is missing.";
 
-      case 'change':
-        data = "";
-        data += MAGIC_NUMBER + VERSION_MAX + VERSION_USING + VERSION_MIN + uint8_hex(blockID[type]) + EXTENSIONS;
-        data += previous;
-        data += representative;
+      // all good here, compute the block hash
+      var context = blake.blake2bInit(32, null);
+      blake.blake2bUpdate(context, hex_uint8(STATE_BLOCK_PREAMBLE));
+      blake.blake2bUpdate(context, hex_uint8(keyFromAccount(blockAccount)));
+      blake.blake2bUpdate(context, hex_uint8(previous));
+      blake.blake2bUpdate(context, hex_uint8(representative));
+      blake.blake2bUpdate(context, hex_uint8(balance));
+      blake.blake2bUpdate(context, hex_uint8(link));
+      hash = uint8_hex(blake.blake2bFinal(context));
+    } else { // legacy block
+      switch (type) {
+        case 'send':
+          var context = blake.blake2bInit(32, null);
+          blake.blake2bUpdate(context, hex_uint8(previous));
+          blake.blake2bUpdate(context, hex_uint8(destination));
+          blake.blake2bUpdate(context, hex_uint8(balance));
+          hash = uint8_hex(blake.blake2bFinal(context));
+          break;
 
-        var context = blake.blake2bInit(32, null);
-        blake.blake2bUpdate(context, hex_uint8(previous));
-        blake.blake2bUpdate(context, hex_uint8(representative));
-        hash = uint8_hex(blake.blake2bFinal(context));
-        break;
+        case 'receive':
+          var context = blake.blake2bInit(32, null);
+          blake.blake2bUpdate(context, hex_uint8(previous));
+          blake.blake2bUpdate(context, hex_uint8(source));
+          hash = uint8_hex(blake.blake2bFinal(context));
+          break;
 
-      default:
-        throw "Block parameters need to be set first.";
+        case 'open':
+          var context = blake.blake2bInit(32, null);
+          blake.blake2bUpdate(context, hex_uint8(source));
+          blake.blake2bUpdate(context, hex_uint8(representative));
+          blake.blake2bUpdate(context, hex_uint8(account));
+          hash = uint8_hex(blake.blake2bFinal(context));
+          break;
+
+        case 'change':
+          var context = blake.blake2bInit(32, null);
+          blake.blake2bUpdate(context, hex_uint8(previous));
+          blake.blake2bUpdate(context, hex_uint8(representative));
+          hash = uint8_hex(blake.blake2bFinal(context));
+          break;
+
+        default:
+          throw "Block parameters need to be set first.";
+      }
     }
 
     return hash;
@@ -111,11 +137,17 @@ module.exports = function () {
    * @param {string} previousBlockHash - The previous block 32 byte hash hex encoded
    * @param {string} destinationAccount - The XRB account receiving the money
    * @param {string} balanceRemaining - Remaining balance after sending this block (Raw)
+   * @param {Block} previousBlk - The whole previous block
    * @throws An exception on invalid block hash
    * @throws An exception on invalid destination account
    * @throws An exception on invalid balance
    */
-  api.setSendParameters = function (previousBlockHash, destinationAccount, balanceRemaining) {
+  api.setSendParameters = function (previousBlockHash, destinationAccount, balanceRemaining, previousBlk = false) {
+    if (previousBlk) {
+      previousBlock = previousBlk;
+      previousBlockHash = previousBlk.getHash(true);
+    }
+    
     if (!/[0-9A-F]{64}/i.test(previousBlockHash))
       throw "Invalid previous block hash.";
 
@@ -125,11 +157,18 @@ module.exports = function () {
       throw "Invalid destination account.";
     }
 
+    _private.reset();
     previous = previousBlockHash;
     destination = pk;
     decBalance = balanceRemaining;
     balance = dec2hex(balanceRemaining, 16);
-    type = 'send';
+
+    if (isState) {
+      link = destination;
+      isSending = true;
+    } else {
+      type = 'send';
+    }
   }
 
   /**
@@ -137,18 +176,38 @@ module.exports = function () {
    *
    * @param {string} previousBlockHash - The previous block 32 byte hash hex encoded
    * @param {string} sourceBlockHash - The hash of the send block which is going to be received, 32 byte hex encoded
+   * @param {bigInt} receiveAmount - The amount received, or the one which was sent frome the origin account (only for state blocks) 
+   * @param {Block} previousBlk - The whole previous block (only for state blocks)
    * @throws An exception on invalid previousBlockHash
-   * @throws An exception on invalid sourceBlockHash
+   * @throws An exception on invalid source block hash
+   * @throws An exception on invalid previousBlk
    */
-  api.setReceiveParameters = function (previousBlockHash, sourceBlockHash) {
-    if (!/[0-9A-F]{64}/i.test(previousBlockHash))
-      throw "Invalid previous block hash.";
+  api.setReceiveParameters = function (previousBlockHash = false, sourceBlockHash, receiveAmount = false, previousBlk = false) {
     if (!/[0-9A-F]{64}/i.test(sourceBlockHash))
       throw "Invalid source block hash.";
 
+    if (!isState) {
+      if (!/[0-9A-F]{64}/i.test(previousBlockHash))
+        throw "Invalid previous block hash.";
+    } else {
+      previousBlockHash = previousBlk.getHash(true);
+      if (!previousBlockHash)
+        throw "Invalid 'previousBlk' parameter.";
+    }
+
+    _private.reset();
     previous = previousBlockHash;
     source = sourceBlockHash;
-    type = 'receive';
+    if (isState) {
+      receiveAmount = bigInt(receiveAmount);
+      if (receiveAmount.lesser(0))
+        throw "Invalid receive amount.";
+      link = source;
+      balance = dec2hex(previousBlk.getBalance().add(receiveAmount).toString(), 16);
+      isReceiving = true;
+    } else {
+      type = 'receive';
+    }
 
   }
 
@@ -157,12 +216,13 @@ module.exports = function () {
    *
    * @param {string} sourceBlockHash - The hash of the send block which is going to be received, 32 byte hex encoded
    * @param {string} newAccount - The XRB account which is being created
+   * @param {bigInt} receiveAmount - The amount received, or the one which was sent frome the origin account (only for state blocks) 
    * @param {string} representativeAccount - The account to be set as representative, if none, its self assigned
    * @throws An exception on invalid sourceBlockHash
    * @throws An exception on invalid account
    * @throws An exception on invalid representative account
    */
-  api.setOpenParameters = function (sourceBlockHash, newAccount, representativeAccount = null) {
+  api.setOpenParameters = function (sourceBlockHash, newAccount, receiveAmount = false, representativeAccount = null) {
     if (!/[0-9A-F]{64}/i.test(sourceBlockHash))
       throw "Invalid source block hash.";
 
@@ -182,9 +242,19 @@ module.exports = function () {
     else
       representative = account;
 
+    if (isState) {
+      if (!receiveAmount)
+        throw "Invalid receive amount.";
+      _private.reset();
+      receiveAmount = bigInt(receiveAmount);
+      previous = HEX_32_BYTE_ZERO;
+      balance = dec2hex(receiveAmount.toString(), 16);
+      link = sourceBlockHash;
+      isReceiving = true;
+    } else {
+      type = 'open';
+    }
     source = sourceBlockHash;
-    type = 'open';
-
   }
 
   /**
@@ -205,6 +275,7 @@ module.exports = function () {
       throw "Invalid representative account.";
     }
 
+    _private.reset();
     previous = previousBlockHash;
     type = "change";
   }
@@ -276,6 +347,43 @@ module.exports = function () {
   api.setOrigin = function (acc) {
     if (type == 'receive' || type == 'open')
       origin = acc;
+    else if (isState) {
+      isReceiving = true;
+      origin = acc;
+    }
+  }
+
+  /**
+   * Sets the account/block representative. With state blocks, each block contains it so it can be set anytime with this
+   * @param {string} rep - The representative account or its hex encoded public key
+   * @throws An exception if rep is invalid and a rep cannot be pulled from the previous block
+   */
+  api.setRepresentative = function (rep) {
+    if (/[0-9A-F]{64}/i.test(rep)) 
+      representative = rep;
+    else {
+      rep = keyFromAccount(rep);
+      if (rep)
+        representative = rep;
+      else {
+        // try to pull it from the previous block
+        rep = false;
+        if (previousBlock) {
+          rep = keyFromAccount(previousBlock.getRepresentative());
+        }
+        if (!rep)
+          throw "Representative passed is invalid. Also, unable to get the one used on the previous block.";
+        representative = rep;
+      }
+    }
+  }
+
+  /**
+   * Sets the account balance at this block
+   * @param {bigInt} bal
+   */
+  api.setBalance = function (bal) {
+    balance = dec2hex(bigInt(bal).toString(), 16);
   }
 
   /**
@@ -283,9 +391,9 @@ module.exports = function () {
    * @returns originAccount
    */
   api.getOrigin = function () {
-    if (type == 'receive' || type == 'open')
+    if (type == 'receive' || type == 'open' || (isState && isReceiving))
       return origin;
-    if (type == 'send')
+    if (type == 'send' || (isState && isSending))
       return blockAccount;
     return false;
   }
@@ -295,9 +403,9 @@ module.exports = function () {
    * @returns destinationAccount
    */
   api.getDestination = function () {
-    if (type == 'send')
+    if (type == 'send' || ( isSending && isState) )
       return accountFromHexKey(destination);
-    if (type == 'receive' || type == 'open')
+    if (type == 'receive' || type == 'open' || (isState && isReceiving))
       return blockAccount;
   }
 
@@ -315,10 +423,14 @@ module.exports = function () {
   }
 
   api.getType = function () {
+    if (isState)
+      return 'state';
     return type;
   }
 
   api.getBalance = function (format = 'dec') {
+    if (!balance) // it might not be set
+      return false;
     if (format == 'dec') {
       var dec = bigInt(hex2dec(balance));
       return dec;
@@ -332,7 +444,7 @@ module.exports = function () {
    * @returns {string} The previous block hash
    */
   api.getPrevious = function () {
-    if (type == 'open')
+    if (type == 'open' || previous == HEX_32_BYTE_ZERO)
       return account;
     return previous;
   }
@@ -342,10 +454,20 @@ module.exports = function () {
   }
 
   api.getRepresentative = function () {
-    if (type == 'change' || type == 'open')
+    if (type == 'change' || type == 'open' || isState)
       return accountFromHexKey(representative);
     else
       return false;
+  }
+
+  api.getLink = function () {
+    if (isState)
+      return link;
+  }
+
+  api.getLinkAsAccount = function () {
+    if (isState)
+      return accountFromHexKey(link);
   }
 
   api.ready = function () {
@@ -390,13 +512,25 @@ module.exports = function () {
   }
 
   /**
-   *
-   * @returns {string} The raw block hex encoded ready to be sent to the network
+   * Sets the previous block.
+   * @param {Block} blk - The previous block
+   * @throws An exception if the arg passed is not a block.
+   * @throws An exception if the arg passed is an incomplete block.
    */
-  api.getRawBlock = function () {
-    if (!signed || !worked)
-      throw "Incomplete block";
-    return data;
+  api.setPreviousBlock = function (blk) {
+    let h;
+    try{
+      h = blk.build();
+    } catch(e) { 
+      // block incomplete
+      throw "Block is incomplete.";
+    }
+
+    if(!h) { 
+      // not a Block
+      throw "Arg passed is not a Block";
+    }
+    previousBlock = blk;
   }
 
   /**
@@ -407,33 +541,42 @@ module.exports = function () {
     if (!signed)
       throw "Block lacks signature";
     var obj = {};
-    obj.type = type;
 
-    switch (type) {
-      case 'send':
-        obj.previous = previous;
-        obj.destination = accountFromHexKey(destination);
-        obj.balance = balance;
-        break;
+    if (isState) {
+      obj.type = 'state';
+      obj.previous = previous;
+      obj.link = link;
+      obj.representative = accountFromHexKey(representative); // state blocks are processed with the rep encoded as an account
+      obj.account = blockAccount;
+      obj.balance = hex2dec(balance); // needs to be processed in dec in state blocks
+    } else {
+      obj.type = type;
+      switch (type) {
+        case 'send':
+          obj.previous = previous;
+          obj.destination = accountFromHexKey(destination);
+          obj.balance = balance;
+          break;
 
-      case 'receive':
-        obj.previous = previous;
-        obj.source = source;
-        break;
+        case 'receive':
+          obj.previous = previous;
+          obj.source = source;
+          break;
 
-      case 'open':
-        obj.source = source;
-        obj.representative = accountFromHexKey(representative ? representative : account);
-        obj.account = accountFromHexKey(account);
-        break;
+        case 'open':
+          obj.source = source;
+          obj.representative = accountFromHexKey(representative ? representative : account);
+          obj.account = accountFromHexKey(account);
+          break;
 
-      case 'change':
-        obj.previous = previous;
-        obj.representative = accountFromHexKey(representative);
-        break;
+        case 'change':
+          obj.previous = previous;
+          obj.representative = accountFromHexKey(representative);
+          break;
 
-      default:
-        throw "Invalid block type.";
+        default:
+          throw "Invalid block type.";
+      }
     }
 
     obj.work = work;
@@ -465,6 +608,7 @@ module.exports = function () {
     else
       var obj = json;
 
+    isState = false;
     switch (obj.type) {
       case 'send':
         type = 'send';
@@ -490,6 +634,15 @@ module.exports = function () {
         type = 'change';
         previous = obj.previous;
         representative = keyFromAccount(obj.representative);
+        break;
+
+      case 'state':
+        isState = true;
+        blockAccount = obj.account;
+        previous = obj.previous;
+        api.setRepresentative(obj.representative);
+        balance = dec2hex(obj.balance, 16);
+        link = obj.link;
         break;
 
       default:
@@ -557,8 +710,15 @@ module.exports = function () {
     version = v;
   }
 
-  api.getMaxVersion = function () {
-    return BLOCK_MAX_VERSION;
+  _private.reset = function () {
+    isSending = false;
+    isReceiving = false;
+    signed = false;
+    worked = false;
+    signature = null;
+    work = null;
+    origin = false;
+    destination = false;
   }
 
   return api;
