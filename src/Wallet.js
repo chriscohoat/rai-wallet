@@ -389,7 +389,7 @@ module.exports = function (password) {
    */
   api.useAccount = function (accountToUse) {
     // as now we are using nano_ addresses internally replace xrb with nano
-    accountToUse.replace('xrb_', 'nano_');
+    accountToUse = accountToUse.replace('xrb_', 'nano_');
     for (var i in keys) {
       if (keys[i].account == accountToUse) {
         currentIdx = i;
