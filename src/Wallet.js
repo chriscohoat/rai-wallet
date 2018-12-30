@@ -388,6 +388,8 @@ module.exports = function (password) {
    * @throws An exception if the account is not found in the wallet
    */
   api.useAccount = function (accountToUse) {
+    // as now we are using nano_ addresses internally replace xrb with nano
+    accountToUse.replace('xrb_', 'nano_');
     for (var i in keys) {
       if (keys[i].account == accountToUse) {
         currentIdx = i;
