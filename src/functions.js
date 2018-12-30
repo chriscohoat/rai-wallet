@@ -24,7 +24,7 @@ export const accountFromHexKey = function (hex) {
   var checksum_bytes = blake.blake2b(key_bytes, null, 5).reverse();
   var checksum = nanoBase32.encode(checksum_bytes);
   var c_account = nanoBase32.encode(key_bytes);
-  return 'xrb_' + c_account + checksum;
+  return 'nano_' + c_account + checksum;
 };
 
 export const parseXRBAccount = function(str) {
