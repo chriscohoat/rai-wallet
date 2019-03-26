@@ -268,7 +268,8 @@ module.exports = function (password) {
       subscribed: false,
       chain: [],
       representative: "",
-      label: ""
+      label: "",
+      color: ""
     }
     for (let k in o) {
       key[k] = o[k];
@@ -375,6 +376,7 @@ module.exports = function (password) {
         balance: bigInt(keys[i].balance),
         pendingBalance: bigInt(keys[i].pendingBalance),
         label: keys[i].label,
+        color: keys[i].color,
         lastHash: keys[i].chain.length > 0 ? keys[i].chain[keys[i].chain.length - 1] : false
       });
     }
@@ -684,6 +686,16 @@ module.exports = function (password) {
     for (let i in keys) {
       if (keys[i].account == acc) {
         keys[i].label = label;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  api.setColor = function (acc, color) {
+    for (let i in keys) {
+      if (keys[i].account == acc) {
+        keys[i].color = color;
         return true;
       }
     }
@@ -1306,6 +1318,7 @@ module.exports = function (password) {
         pack.accounts.push({
           type: KEY_TYPE.SEEDED,
           label: key.label,
+          color: key.color,
           seedIndex: key.seedIndex,
         });
         break;
@@ -1313,6 +1326,7 @@ module.exports = function (password) {
         pack.accounts.push({
           type: KEY_TYPE.EXPLICIT,
           label: key.label,
+          color: key.color,
           secretKey: uint8_hex(key.priv),
         });
         break;
@@ -1387,6 +1401,7 @@ module.exports = function (password) {
       case KEY_TYPE.SEEDED: {
         let key = _private.newKeyDataFromSeed(acc.seedIndex);
         key.label = acc.label;
+        key.color = acc.color || '';
         _private.addKey(key);
         lastKeyFromSeed = Math.max(lastKeyFromSeed, acc.seedIndex);
         break;
@@ -1394,6 +1409,7 @@ module.exports = function (password) {
       case KEY_TYPE.EXPLICIT: {
         let key = _private.newKeyDataFromSecret(hex_uint8(acc.secretKey));
         key.label = acc.label;
+        key.color = acc.color || '';
         _private.addKey(key);
         break;
       }
